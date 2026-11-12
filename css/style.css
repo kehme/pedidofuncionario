@@ -1,0 +1,37 @@
+:root{--bg:#f4f6f8;--card:#fff;--ink:#1d2733;--mut:#6b7785;--pri:#0f766e;--pri2:#115e59;--warn:#b45309;--warnbg:#fef3c7;--err:#b91c1c;--ok:#15803d;--line:#e2e8f0}
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+h1,h2,h3{margin:0 0 .5rem}h2{font-size:1.15rem}h3{font-size:1rem}
+.top{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap;background:var(--pri);color:#fff;padding:.6rem 1rem;position:sticky;top:0;z-index:20}
+.top b{font-size:1.05rem}.top .sp{flex:1}.top span{opacity:.9}
+.tabs{display:flex;gap:.25rem;flex-wrap:wrap;background:#fff;border-bottom:1px solid var(--line);padding:.4rem .75rem;position:sticky;top:46px;z-index:15}
+.tabs button{background:none;border:0;padding:.55rem .9rem;border-radius:8px;font:inherit;color:var(--mut);cursor:pointer}
+.tabs button.on{background:#e6f4f2;color:var(--pri2);font-weight:600}
+main{max-width:1100px;margin:0 auto;padding:1rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:1rem;margin-bottom:1rem}
+.center{min-height:100vh;display:grid;place-items:center;padding:1rem}.center .card{width:100%;max-width:420px}
+label{display:block;font-weight:600;margin:.6rem 0 .2rem}
+input,select{width:100%;padding:.6rem .7rem;border:1px solid #cbd5e1;border-radius:8px;font:inherit;background:#fff}
+input[readonly]{background:#f1f5f9}
+button.btn{background:var(--pri);color:#fff;border:0;border-radius:8px;padding:.6rem 1rem;font:inherit;font-weight:600;cursor:pointer}
+button.btn:hover{background:var(--pri2)}button.btn:disabled{opacity:.5;cursor:not-allowed}
+button.sec{background:#fff;color:var(--pri2);border:1px solid var(--pri)}button.sec:hover{background:#e6f4f2}
+button.danger{background:var(--err)}button.sm{padding:.3rem .6rem;font-size:.85rem}
+.row{display:flex;gap:.75rem;flex-wrap:wrap;align-items:flex-end}.row>*{flex:1 1 140px}.row>.fix{flex:0 0 auto}
+.warn{background:var(--warnbg);border:1px solid #f59e0b;color:#78350f;border-radius:10px;padding:.7rem 1rem;font-weight:600;margin-bottom:1rem}
+.err{color:var(--err);font-weight:600}.ok{color:var(--ok);font-weight:600}.mut{color:var(--mut)}
+table{width:100%;border-collapse:collapse}th,td{padding:.45rem .5rem;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{font-size:.8rem;text-transform:uppercase;color:var(--mut)}td.n,th.n{text-align:right;white-space:nowrap}
+.scroll{overflow-x:auto}
+.badge{display:inline-block;padding:.1rem .55rem;border-radius:99px;font-size:.78rem;font-weight:700}
+.badge.f{background:#dcfce7;color:var(--ok)}.badge.r{background:#fef3c7;color:var(--warn)}
+.bar{height:10px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin:.4rem 0}.bar i{display:block;height:100%;background:var(--pri)}.bar.over i{background:var(--err)}
+.pg{background:#fff;border:1px solid var(--line);border-radius:10px;margin:0 auto 1rem;max-width:760px;aspect-ratio:760/1075;position:relative;overflow:hidden;cursor:zoom-in}
+.pg img{width:100%;height:100%;display:block;object-fit:contain}.pg small{position:absolute;right:8px;top:6px;background:#0008;color:#fff;border-radius:6px;padding:0 .4rem}
+.hits{border:1px solid var(--line);border-radius:10px;margin-top:.5rem;max-height:260px;overflow:auto}
+.hit{display:flex;gap:.5rem;align-items:center;padding:.5rem .7rem;border-bottom:1px solid var(--line)}.hit:last-child{border:0}.hit span{flex:1}
+.modal{position:fixed;inset:0;background:#0009;display:grid;place-items:center;z-index:50;padding:1rem}.modal .card{max-width:440px;width:100%;margin:0}
+.modal.zoom{overflow:auto;place-items:start center}.modal.zoom img{width:min(1400px,100%);background:#fff}
+.actions{display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem;flex-wrap:wrap}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#1d2733;color:#fff;padding:.6rem 1rem;border-radius:10px;opacity:0;pointer-events:none;transition:.25s;z-index:99;max-width:90vw}
+#toast.show{opacity:1}#toast.bad{background:var(--err)}
+details summary{cursor:pointer;font-weight:600}
