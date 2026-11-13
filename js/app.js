@@ -2,7 +2,7 @@
 (() => {
   const CFG = window.KEHOME_CONFIG || {};
   const E = window.Exporter;
-  const LIMITE = 100, DESC = E.DESCONTO, PAGINAS = 527;
+  const LIMITE = 100, DESC = E.DESCONTO;
   const $ = (s, r = document) => r.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const brl = E.moeda;
@@ -17,10 +17,10 @@
     FINALIZAR_SOMENTE_NO_PERIODO: 'Só é possível finalizar o pedido dentro do período autorizado.', USUARIO_JA_TEM_RASCUNHO: 'Este funcionário já começou o pedido do próximo período; não é possível reabrir este.',
     NAO_PODE_EXCLUIR_A_SI_MESMO: 'Você não pode excluir a própria conta.',
   };
-  const S = { sess: null, produtos: new Map(), pedido: null, idx: {}, view: 'catalogo', prefill: null,
-              adm: { tab: 'pedidos', periodos: [], periodoId: null, pedidos: [], usuarios: [], editU: null }, tpl: null };
+  const S = { sess: null, produtos: new Map(), pedido: null, catalogos: [], catSel: null, catErro: false, view: 'catalogo', prefill: null,
+              adm: { tab: 'pedidos', periodos: [], periodoId: null, pedidos: [], usuarios: [], editU: null, catalogos: [], editC: null }, tpl: null };
   let sb;
-  S.pos = null; S.catOnly = false; S.poll = null;
+  S.catOnly = false; S.poll = null;
 
   const toast = (m, bad) => { const t = $('#toast'); t.textContent = m; t.className = 'show' + (bad ? ' bad' : ''); clearTimeout(toast.t); toast.t = setTimeout(() => (t.className = ''), 3500); };
   const root = $('#app');
@@ -137,7 +137,7 @@
   // ---------------------------------------------------------------- fora do período: catálogo + pedido adiantado
   async function abrirAdiantado() {
     const r = await rpc('app_sessao'); S.sess = { ...S.sess, ...r }; sessionStorage.setItem('kh', JSON.stringify(S.sess));   // o período pode ter aberto nesse meio tempo
-    await carregarFuncionario(); S.catOnly = true; S.view = 'catalogo'; S.pos = null; render(); window.scrollTo(0, 0);
+    await carregarFuncionario(); S.catOnly = true; S.view = 'catalogo'; render(); window.scrollTo(0, 0);
   }
   const avisoPeriodo = () => {
     if (S.sess.periodo_aberto) return '';
@@ -153,8 +153,7 @@
         if (!S.sess) return clearInterval(S.poll);
         const r = await rpc('app_sessao'); S.sess = { ...S.sess, ...r };
         if (r.periodo_aberto) {
-          clearInterval(S.poll); S.poll = null; const cat = S.view === 'catalogo'; if (cat) salvarPosicao();
-          render(); if (cat) restaurarPosicao(); toast('O período de pedidos abriu! Agora já é possível finalizar o pedido.');
+          clearInterval(S.poll); S.poll = null; render(); toast('O período de pedidos abriu! Agora já é possível finalizar o pedido.');
         }
       } catch (_) {}
     }, 30000);
@@ -162,9 +161,9 @@
 
   // ---------------------------------------------------------------- funcionário
   async function carregarFuncionario() {
-    const [prods, ped, idx] = await Promise.all([rpc('app_produtos'), rpc('app_meu_pedido'), fetch('catalogo/index.json').then((r) => r.json()).catch(() => ({}))]);
+    const [prods, ped, cats] = await Promise.all([rpc('app_produtos'), rpc('app_meu_pedido'), rpc('app_catalogos').catch(() => null)]);
     S.produtos = new Map(prods.map(([ref, descricao, preco, cx, estoque]) => [ref, { ref, descricao, preco: Number(preco), cx, estoque }]));
-    S.pedido = ped; S.idx = idx;
+    S.pedido = ped; S.catErro = !Array.isArray(cats); S.catalogos = Array.isArray(cats) ? cats : [];
   }
 
   function telaFuncionario() {
@@ -179,11 +178,15 @@
   }
 
   function viewCatalogo() {
-    const pages = [];
-    for (let n = 1; n <= PAGINAS; n++) pages.push(`<div class="pg" id="pg-${n}" data-a="zoom" data-n="${n}"><small>${n}</small><img loading="lazy" decoding="async" alt="Catálogo, página ${n}" src="catalogo/p${String(n).padStart(3, '0')}.webp"></div>`);
-    $('#main').className = 'cat';
-    $('#main').innerHTML = `${avisoPeriodo()}<p class="tip">Deslize para o lado para trocar de página. Toque na página para ampliar.</p>${pages.join('')}`;
-    root.insertAdjacentHTML('beforeend', `<button class="chip" id="chip" data-a="busca" aria-label="Buscar produto ou ir para uma página">1 / ${PAGINAS}</button>`);
+    const L = S.catalogos || [], sel = L.find((c) => c.id === S.catSel) || L[0], main = $('#main');
+    main.className = 'cat';
+    if (!sel) { main.innerHTML = `${avisoPeriodo()}<div class="card" style="margin:.75rem"><p class="mut">${S.catErro ? 'Não foi possível carregar os catálogos. Verifique a conexão e entre novamente.' : 'Nenhum catálogo disponível no momento.'}</p></div>`; return; }
+    S.catSel = sel.id;
+    const fid = driveId(sel.url), ext = svg('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>');
+    main.innerHTML = `${avisoPeriodo()}<div class="ctop"><div class="tabs" role="tablist" aria-label="Catálogos">${L.map((c) => `<button role="tab" aria-selected="${c.id === sel.id}" data-a="ctab" data-id="${c.id}" class="${c.id === sel.id ? 'on' : ''}">${esc(c.nome)}</button>`).join('')}</div>
+      ${fid ? `<a class="ibtn dk" href="https://drive.google.com/file/d/${fid}/view" target="_blank" rel="noopener noreferrer" aria-label="Abrir este catálogo no Google Drive">${ext}</a>` : ''}<button class="ibtn dk" data-a="busca" aria-label="Buscar produto">${IC.search}</button></div>
+      ${fid ? `<iframe class="cframe" src="https://drive.google.com/file/d/${fid}/preview" title="${esc(sel.nome)}" allow="fullscreen" loading="lazy"></iframe>` : '<div class="card" style="margin:.75rem"><p class="err">O link deste catálogo não é válido. Avise o administrador.</p></div>'}`;
+    ajustarFrame();
   }
 
   const stepper = (k, q) => `<div class="step"><button data-a="dec" data-k="${k}" aria-label="Diminuir quantidade" ${q <= 1 ? 'disabled' : ''}>${IC.minus}</button><b>${q}</b><button data-a="inc" data-k="${k}" aria-label="Aumentar quantidade">${IC.plus}</button></div>`;
@@ -252,15 +255,16 @@
     S.produtos = new Map(prods.map(([ref, descricao, preco, cx, estoque]) => [ref, { ref, descricao, preco: Number(preco), cx, estoque }]));
     S.adm.periodos = per; if (!per.find((p) => p.id === S.adm.periodoId)) S.adm.periodoId = per.length ? per[0].id : null;
     await carregarPedidosAdmin(); S.adm.usuarios = await rpc('app_admin_usuarios');
+    S.adm.catalogos = await rpc('app_catalogos').catch(() => []);
   }
   async function carregarPedidosAdmin() { S.adm.pedidos = S.adm.periodoId ? await rpc('app_admin_pedidos', { p_periodo: S.adm.periodoId }) : []; }
 
   function telaAdmin() {
-    const A = S.adm, T = [['pedidos', 'Pedidos'], ['planilhas', 'Planilhas'], ['pdf', 'Emitir PDF'], ['usuarios', 'Cadastros'], ['periodo', 'Período'], ['produtos', 'Produtos']];
+    const A = S.adm, T = [['pedidos', 'Pedidos'], ['planilhas', 'Planilhas'], ['pdf', 'Emitir PDF'], ['usuarios', 'Cadastros'], ['periodo', 'Período'], ['produtos', 'Produtos'], ['catalogos', 'Catálogos']];
     const sel = `<select id="per" aria-label="Período">${A.periodos.map((p) => `<option value="${p.id}" ${p.id === A.periodoId ? 'selected' : ''}>${fmtDt(p.inicio)} → ${fmtDt(p.fim)}</option>`).join('') || '<option>Nenhum período</option>'}</select>`;
     root.innerHTML = `<div class="hd">` + topo('', `<div class="per">${sel}</div>`) + `<div class="tabs">${T.map(([k, n]) => `<button data-a="atab" data-t="${k}" class="${A.tab === k ? 'on' : ''}">${n}</button>`).join('')}</div></div><main id="main"></main>`;
     $('#per').onchange = guard(async (e) => { A.periodoId = Number(e.target.value); await carregarPedidosAdmin(); render(); });
-    ({ pedidos: admPedidos, planilhas: admPlanilhas, pdf: admPdf, usuarios: admUsuarios, periodo: admPeriodo, produtos: admProdutos })[A.tab]();
+    ({ pedidos: admPedidos, planilhas: admPlanilhas, pdf: admPdf, usuarios: admUsuarios, periodo: admPeriodo, produtos: admProdutos, catalogos: admCatalogos })[A.tab]();
   }
   const fins = () => S.adm.pedidos.filter((p) => p.status === 'finalizado');
   const badge = (s) => `<span class="badge ${s === 'finalizado' ? 'f' : 'r'}">${s === 'finalizado' ? 'Finalizado' : 'Em andamento'}</span>`;
@@ -341,101 +345,30 @@
     S.adm.periodoId = r.id; await carregarAdmin(); render(); toast('Período salvo.');
   });
 
-  // ---------------------------------------------------------------- navegação do catálogo
-  const alturaCab = () => { const h = $('.hd'); return h ? h.offsetHeight : 0; };
-  // página do catálogo que está no topo da tela (0 = ainda acima das páginas)
-  function paginaAtual() {
-    const a = $('#pg-1'), b = $('#pg-2'); if (!a || !b) return 0;
-    const passo = b.offsetTop - a.offsetTop, topo1 = a.getBoundingClientRect().top + window.scrollY;
-    const v = Math.floor((window.scrollY + alturaCab() + 30 - topo1) / passo);
-    return v < 0 ? 0 : Math.min(PAGINAS, v + 1);
+  // ---------------------------------------------------------------- catálogos (Google Drive), navegação e busca
+  const driveId = (u) => { const t = String(u || ''), m = t.match(/\/d\/([\w-]{10,})/) || t.match(/[?&]id=([\w-]{10,})/); return m ? m[1] : null; };
+  function ajustarFrame() {   // o visualizador ocupa o resto da tela e rola por dentro
+    const f = $('.cframe'); if (!f) return; const nav = $('.bn');
+    f.style.height = Math.max(360, window.innerHeight - (nav ? nav.offsetHeight : 0) - (f.getBoundingClientRect().top + window.scrollY) - 4) + 'px';
   }
-  function irPagina(n, suave = true) {
-    n = Math.max(1, Math.min(PAGINAS, n)); const el = $('#pg-' + n); if (!el) return;
-    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - alturaCab() - 8, behavior: suave ? 'smooth' : 'auto' });
-  }
-  // guarda em que ponto do catálogo o usuário parou (página + fração já rolada dela)
-  function salvarPosicao() {
-    const n = paginaAtual();
-    if (!n) { S.pos = { y: window.scrollY }; return; }
-    const r = $('#pg-' + n).getBoundingClientRect();
-    S.pos = { n, frac: (alturaCab() + 8 - r.top) / r.height };
-  }
-  function restaurarPosicao() {
-    const p = S.pos; if (!p) return window.scrollTo(0, 0);
-    if (p.n) { const el = $('#pg-' + p.n), r = el.getBoundingClientRect(); window.scrollTo(0, r.top + window.scrollY + p.frac * r.height - alturaCab() - 8); }
-    else window.scrollTo(0, p.y || 0);
-  }
-  function setView(v) {
-    if (v === S.view) return;
-    if (S.view === 'catalogo') salvarPosicao();
-    S.view = v; render();
-    if (v === 'catalogo') restaurarPosicao(); else window.scrollTo(0, 0);
-  }
+  window.addEventListener('resize', ajustarFrame); window.addEventListener('orientationchange', ajustarFrame);
+  function setView(v) { if (v === S.view) return; S.view = v; render(); window.scrollTo(0, 0); }
 
-  // Deslizar para o lado (celular) troca de página do catálogo
-  let toque = null;
-  document.addEventListener('touchstart', (e) => {
-    toque = null;
-    if (e.touches.length !== 1 || !S.sess || S.sess.is_admin || S.view !== 'catalogo' || document.querySelector('.modal')) return;
-    if (e.target.closest('input,button,.hits')) return;
-    if (window.visualViewport && window.visualViewport.scale > 1.02) return;       // página com zoom (pinça): não interfere
-    const t = e.touches[0];
-    if (t.clientX < 24 || t.clientX > window.innerWidth - 24) return;               // bordas: gestos do sistema (voltar)
-    toque = { x: t.clientX, y: t.clientY, t: Date.now() };
-  }, { passive: true });
-  document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) toque = null; }, { passive: true });
-  document.addEventListener('touchcancel', () => { toque = null; }, { passive: true });
-  document.addEventListener('touchend', (e) => {
-    if (!toque) return; const t = e.changedTouches[0], dx = t.clientX - toque.x, dy = t.clientY - toque.y, dt = Date.now() - toque.t; toque = null;
-    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8 || dt > 700) return;  // só gesto horizontal, firme e rápido
-    irPagina(paginaAtual() + (dx < 0 ? 1 : -1));
-  }, { passive: true });
-
-  // ---------------------------------------------------------------- busca em tela cheia, zoom e indicador de página
   function abrirBusca() {
     const m = document.createElement('div'); m.className = 'modal sheet';
     m.innerHTML = `<div class="sh-top"><div class="sfield">${IC.search}<input id="q" type="search" inputmode="search" enterkeyhint="search" placeholder="Referência ou nome do produto" autocomplete="off" autocapitalize="none" aria-label="Buscar produto"></div><button class="ibtn" data-a="fechar" aria-label="Fechar busca">${IC.x}</button></div>
-      <div class="sh-body"><div id="hits"><p class="mut">Digite a referência ou parte do nome (ex.: 3010, concha).</p></div>
-      <div class="goto"><label for="gp">Ir para a página</label><div class="gorow"><input id="gp" type="number" inputmode="numeric" min="1" max="${PAGINAS}" placeholder="1 a ${PAGINAS}" enterkeyhint="go"><button class="btn sec" data-a="gopg">Ir</button></div></div></div>`;
+      <div class="sh-body"><div id="hits"><p class="mut">Digite a referência ou parte do nome (ex.: 3010, concha).</p></div></div>`;
     abrirModal(m);
     const q = $('#q', m), box = $('#hits', m);
     q.addEventListener('input', () => {
       const t = norm(q.value.trim()); if (t.length < 2) { box.innerHTML = '<p class="mut">Digite a referência ou parte do nome (ex.: 3010, concha).</p>'; return; }
       const r = []; for (const p of S.produtos.values()) { if (String(p.ref).startsWith(t) || norm(p.descricao).includes(t)) { r.push(p); if (r.length >= 15) break; } }
       box.innerHTML = r.length ? r.map((p) => `<div class="hit"><b>${p.ref}</b> <span class="d">${esc(p.descricao)}</span><small>${brl(p.preco * (1 - DESC))} c/ desconto</small>
-        <div class="ha">${S.idx[p.ref] ? `<button class="btn sec sm" data-a="goto" data-n="${S.idx[p.ref]}">Ver página</button>` : ''}<button class="btn sm" data-a="pedir" data-ref="${p.ref}">Pedir</button></div></div>`).join('') : '<p class="mut">Nada encontrado.</p>';
+        <div class="ha"><button class="btn sm" data-a="pedir" data-ref="${p.ref}">Pedir</button></div></div>`).join('') : '<p class="mut">Nada encontrado.</p>';
     });
-    $('#gp', m).addEventListener('keydown', (e) => e.key === 'Enter' && irParaDigitada());
     q.focus();
   }
-  function irParaDigitada() {
-    const n = parseInt($('#gp').value, 10);
-    if (!(n >= 1 && n <= PAGINAS)) return toast(`Informe uma página de 1 a ${PAGINAS}.`, true);
-    fecharModais(); irPagina(n, false);
-  }
-  function abrirZoom(n) {
-    const m = document.createElement('div'); m.className = 'modal zoom'; m.dataset.n = n; m.dataset.n0 = n;
-    m.innerHTML = `<div class="zbar"><b id="zl"></b><button class="ibtn" data-a="zmove" data-d="-1" aria-label="Página anterior">${IC.prev}</button><button class="ibtn" data-a="zmove" data-d="1" aria-label="Próxima página">${IC.next}</button><button class="ibtn" data-a="fechar" aria-label="Fechar">${IC.x}</button></div><div class="zscroll"><img alt=""></div>`;
-    abrirModal(m); zmover(m, 0);
-  }
-  function zmover(m, d) {
-    const n = Math.max(1, Math.min(PAGINAS, Number(m.dataset.n) + d)); m.dataset.n = n;
-    $('#zl', m).textContent = `Página ${n} de ${PAGINAS}`;
-    const sc = $('.zscroll', m), img = $('img', m); img.alt = `Catálogo, página ${n}`;
-    img.onload = () => { sc.scrollLeft = (sc.scrollWidth - sc.clientWidth) / 2; sc.scrollTop = 0; };
-    img.src = `catalogo/p${String(n).padStart(3, '0')}.webp`;
-  }
-  function fecharUltimo() {
-    const m = [...document.querySelectorAll('.modal')].pop(); if (!m) return;
-    const moveu = m.classList.contains('zoom') && m.dataset.n !== m.dataset.n0;
-    fecharModal(m); if (moveu) irPagina(Number(m.dataset.n), false);   // volta o catálogo para a página que você estava vendo
-  }
-  let rafChip = 0;
-  window.addEventListener('scroll', () => {
-    if (rafChip || S.view !== 'catalogo') return;
-    rafChip = requestAnimationFrame(() => { rafChip = 0; const c = $('#chip'); if (c) c.textContent = `${Math.max(1, paginaAtual())} / ${PAGINAS}`; });
-  }, { passive: true });
+  function fecharUltimo() { const m = [...document.querySelectorAll('.modal')].pop(); if (m) fecharModal(m); }
   if (window.visualViewport) {   // altura real da tela com o teclado aberto (a busca fica sempre visível)
     const f = () => document.documentElement.style.setProperty('--vh', window.visualViewport.height + 'px');
     window.visualViewport.addEventListener('resize', f); f();
@@ -448,6 +381,37 @@
     await rpc('app_admin_periodo_excluir', { p_id: Number(id) });
     if (S.adm.periodoId === Number(id)) S.adm.periodoId = null;
     await carregarAdmin(); render(); toast('Período excluído.');
+  });
+
+  // ---------------------------------------------------------------- admin: catálogos (abas da home, abertos pelo visualizador do Google Drive)
+  function admCatalogos() {
+    const A = S.adm, L = A.catalogos, c = A.editC || { nome: '', url: '' };
+    $('#main').innerHTML = `<div class="card"><h2>${c.id ? 'Editar catálogo' : 'Novo catálogo'}</h2>
+      <div class="row"><div><label for="cn">Nome da aba</label><input id="cn" value="${esc(c.nome)}" maxlength="40" placeholder="Ex.: Black Friday 2026"></div>
+      <div><label for="cu">Link do Google Drive</label><input id="cu" type="url" value="${esc(c.url)}" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="https://drive.google.com/file/d/…/view"></div></div>
+      <p class="tip">No Drive: abra o arquivo, toque em Compartilhar, escolha "Qualquer pessoa com o link" e copie o link. Para atualizar um catálogo sem mexer aqui, substitua o arquivo no Drive mantendo o mesmo link (Gerenciar versões).</p>
+      <div class="actions"><button class="btn" data-a="csave">Salvar</button>${c.id ? '<button class="btn sec" data-a="ccancel">Cancelar</button>' : ''}</div></div>
+      <div class="card"><h2>Abas da home (${L.length})</h2>${L.length ? `<div class="scroll"><table><thead><tr><th>Ordem</th><th>Nome</th><th></th></tr></thead><tbody>${L.map((x, i) => `<tr><td style="white-space:nowrap"><button class="btn sec sm" data-a="cup" data-id="${x.id}" aria-label="Subir" ${i === 0 ? 'disabled' : ''}>↑</button> <button class="btn sec sm" data-a="cdn" data-id="${x.id}" aria-label="Descer" ${i === L.length - 1 ? 'disabled' : ''}>↓</button></td><td>${esc(x.nome)}</td>
+      <td class="n"><button class="btn sec sm" data-a="cedit" data-id="${x.id}">Editar</button> <button class="btn danger sm" data-a="cdel" data-id="${x.id}">Excluir</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="mut">Nenhum catálogo cadastrado. Os funcionários não verão nada na aba Catálogo.</p>'}</div>`;
+  }
+  const salvarCatalogo = guard(async () => {
+    const c = S.adm.editC, nome = $('#cn').value.trim(), url = $('#cu').value.trim();
+    if (!nome) return toast('Informe o nome da aba.', true);
+    if (!driveId(url)) return toast('Cole o link de um arquivo do Google Drive (…/file/d/…).', true);
+    await rpc('app_admin_catalogo_salvar', { p_id: c?.id || null, p_nome: nome, p_url: url });
+    S.adm.editC = null; S.adm.catalogos = await rpc('app_catalogos'); render(); toast('Catálogo salvo.');
+  });
+  const moverCatalogo = guard(async (id, d) => {
+    const ids = S.adm.catalogos.map((x) => x.id), i = ids.indexOf(Number(id)), j = i + d; if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    await rpc('app_admin_catalogo_ordenar', { p_ids: ids }); S.adm.catalogos = await rpc('app_catalogos'); render();
+  });
+  const excluirCatalogo = guard(async (id) => {
+    const c = S.adm.catalogos.find((x) => x.id === Number(id)); if (!c) return;
+    if (!(await confirmar('Excluir catálogo?', `A aba <b>${esc(c.nome)}</b> deixará de aparecer para os funcionários. O arquivo no Drive não é apagado.`, 'Excluir'))) return;
+    await rpc('app_admin_catalogo_excluir', { p_id: Number(id) });
+    if (S.adm.editC && S.adm.editC.id === Number(id)) S.adm.editC = null;
+    S.adm.catalogos = await rpc('app_catalogos'); render(); toast('Catálogo excluído.');
   });
 
   // ---------------------------------------------------------------- admin: atualizar produtos a partir de uma planilha .xlsx
@@ -512,16 +476,12 @@
       case 'vercat': return abrirAdiantado();
       case 'recheck': { const r = await rpc('app_sessao'); S.sess = { ...S.sess, ...r }; sessionStorage.setItem('kh', JSON.stringify(S.sess)); await iniciar(); return; }
       case 'view': return setView(d.v);
-      case 'goto': fecharModais(); return irPagina(Number(d.n));
       case 'busca': return abrirBusca();
       case 'instalar': { if (!evInstalar) return; const ev = evInstalar; evInstalar = null; ev.prompt(); await ev.userChoice.catch(() => {}); if (!S.sess) telaLogin(); return; }
-      case 'gopg': return irParaDigitada();
       case 'fechar': return fecharUltimo();
-      case 'zmove': return zmover(b.closest('.modal'), Number(d.d));
       case 'dec': return mudarQtd(Number(d.k), -1);
       case 'inc': return mudarQtd(Number(d.k), 1);
       case 'qm': case 'qp': { const q = $('#qtd'); q.value = Math.max(1, (parseInt(q.value, 10) || 1) + (d.a === 'qp' ? 1 : -1)); return; }
-      case 'zoom': return abrirZoom(Number(d.n));
       case 'pedir': fecharModais(); S.prefill = d.ref; return setView('pedido');
       case 'add': return addItem();
       case 'rm': return salvarItens(S.pedido.itens.filter((_, k) => k !== Number(d.k)));
@@ -535,6 +495,13 @@
       case 'ucancel': S.adm.editU = null; return render();
       case 'usave': return salvarUsuario();
       case 'udel': if (await confirmar('Excluir conta?', 'A conta e os pedidos dela serão apagados. Para apenas bloquear o acesso, use "Editar" e desmarque "Ativo".', 'Excluir')) { await rpc('app_admin_usuario_excluir', { p_id: d.id }); S.adm.usuarios = await rpc('app_admin_usuarios'); await carregarPedidosAdmin(); render(); } return;
+      case 'ctab': S.catSel = Number(d.id); return render();
+      case 'cedit': S.adm.editC = S.adm.catalogos.find((x) => x.id === Number(d.id)) || null; return render();
+      case 'ccancel': S.adm.editC = null; return render();
+      case 'csave': return salvarCatalogo();
+      case 'cup': return moverCatalogo(d.id, -1);
+      case 'cdn': return moverCatalogo(d.id, 1);
+      case 'cdel': return excluirCatalogo(d.id);
       case 'pimp': return importarProdutos();
       case 'pcan': S.adm.imp = null; return render();
       case 'psave': return salvarPeriodo(d.m);

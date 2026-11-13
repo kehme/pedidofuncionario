@@ -1,6 +1,6 @@
 /* Service worker - Ke Home Pedido do Funcionário
    Aumente VERSAO sempre que publicar uma atualização, para o app instalado receber a nova versão. */
-const VERSAO = 'v6';
+const VERSAO = 'v7';
 const SHELL = `kh-shell-${VERSAO}`, PAGS = `kh-paginas-${VERSAO}`, LIBS = `kh-libs-${VERSAO}`;
 const ARQUIVOS = ['./', 'index.html', 'css/style.css', 'js/config.js', 'js/exporter.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 const MAX_PAGINAS = 150;   // páginas do catálogo guardadas para ver sem internet (as mais recentes)
@@ -30,8 +30,6 @@ self.addEventListener('fetch', (e) => {
   const u = new URL(req.url);
   if (u.hostname.endsWith('supabase.co')) return;                       // dados do pedido: nunca em cache
   if (u.origin === location.origin) {
-    if (/\/catalogo\/p\d+\.webp$/.test(u.pathname)) return e.respondWith(cachePrimeiro(req, PAGS, MAX_PAGINAS));
-    if (u.pathname.endsWith('/catalogo/index.json')) return e.respondWith(redePrimeiro(req, SHELL));
     return e.respondWith(redePrimeiro(req, SHELL));                     // html, css, js, ícones, planilha-modelo
   }
   if (/cdn\.jsdelivr\.net|cdnjs\.cloudflare\.com|fonts\.(googleapis|gstatic)\.com/.test(u.hostname)) e.respondWith(cachePrimeiro(req, LIBS));

@@ -179,3 +179,9 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;display:flex;alig
 #toast.bad{background:#fff;color:#000;border:2px dashed #000;font-weight:700}
 
 @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+
+/* ---------- catálogos (visualizador do Drive) ---------- */
+.ctop{display:flex;align-items:center;background:#fff;border-bottom:2px solid #111}
+.ctop .tabs{flex:1;min-width:0;border-bottom:0}
+.ctop .ibtn{flex:none}.ctop a.ibtn{text-decoration:none}
+.cframe{display:block;width:100%;border:0;background:#fff}
