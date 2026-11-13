@@ -87,11 +87,25 @@
     telaFuncionario();
   }
 
+  // ---------------------------------------------------------------- instalar como app (PWA)
+  let evInstalar = null;
+  const instalado = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const ehIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const blocoInstalar = () => {
+    if (instalado()) return '';
+    if (evInstalar) return `<button class="btn sec block" data-a="instalar" style="margin-top:.6rem">Instalar app no celular</button>`;
+    if (ehIOS()) return `<p class="tip" style="margin-top:.8rem">Para instalar: toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>.</p>`;
+    return '';
+  };
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); evInstalar = e; if (!S.sess && $('#go')) telaLogin(); });
+  window.addEventListener('appinstalled', () => { evInstalar = null; toast('App instalado!'); if (!S.sess && $('#go')) telaLogin(); });
+  if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+
   function telaLogin() {
     root.innerHTML = `<div class="center"><div class="card"><h1 class="logo">ke<span>home</span></h1><p class="mut">Pedido mensal do funcionário</p>
       <label for="u">Usuário</label><input id="u" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
       <label for="s">Senha</label><input id="s" type="password" autocomplete="current-password" enterkeyhint="go">
-      <p id="le" class="err" role="alert"></p><button class="btn block" id="go">Entrar</button></div></div>`;
+      <p id="le" class="err" role="alert"></p><button class="btn block" id="go">Entrar</button>${blocoInstalar()}</div></div>`;
     const go = async () => { $('#le').textContent = ''; $('#go').disabled = true;
       try { await entrar($('#u').value, $('#s').value); } catch (e) { const le = $('#le'); if (le) le.textContent = e.message; } const g = $('#go'); if (g) g.disabled = false; };
     $('#go').onclick = go; root.querySelectorAll('input').forEach((i) => i.addEventListener('keydown', (e) => e.key === 'Enter' && go()));
@@ -433,6 +447,7 @@
       case 'view': return setView(d.v);
       case 'goto': fecharModais(); return irPagina(Number(d.n));
       case 'busca': return abrirBusca();
+      case 'instalar': { if (!evInstalar) return; const ev = evInstalar; evInstalar = null; ev.prompt(); await ev.userChoice.catch(() => {}); if (!S.sess) telaLogin(); return; }
       case 'gopg': return irParaDigitada();
       case 'fechar': return fecharUltimo();
       case 'zmove': return zmover(b.closest('.modal'), Number(d.d));
