@@ -65,10 +65,18 @@
   function baixar(blob, nome) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome.replace(/[^\w.\- ]+/g, '_'); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
   const calc = (itens) => { let s = 0; for (const i of itens) { const p = S.produtos.get(i.ref); if (p) s += p.preco * i.qtd; } return { sem: s, com: s * (1 - DESC) }; };
 
+  // ---------------------------------------------------------------- login salvo neste aparelho
+  const LS = 'kh_login';
+  const lerLogin = () => { try { return JSON.parse(localStorage.getItem(LS)) || null; } catch (_) { return null; } };
+  const salvarLogin = (u, s) => { try { localStorage.setItem(LS, JSON.stringify({ u, s, auto: true })); } catch (_) {} };
+  const esquecerLogin = () => { try { localStorage.removeItem(LS); } catch (_) {} };
+  const pausarAuto = () => { const l = lerLogin(); if (l) { l.auto = false; try { localStorage.setItem(LS, JSON.stringify(l)); } catch (_) {} } };
+
   // ---------------------------------------------------------------- sessão
-  function sair(render_ = true) { try { if (S.sess) sb.rpc('app_logout', { p_token: S.sess.token }); } catch (_) {} sessionStorage.removeItem('kh'); S.sess = null; S.pedido = null; S.catOnly = false; clearInterval(S.poll); S.poll = null; S.produtos = new Map(); if (render_) render(); else setTimeout(render, 0); }
-  async function entrar(usuario, senha) {
+  function sair(render_ = true) { try { if (S.sess) sb.rpc('app_logout', { p_token: S.sess.token }); } catch (_) {} sessionStorage.removeItem('kh'); pausarAuto(); S.sess = null; S.pedido = null; S.catOnly = false; clearInterval(S.poll); S.poll = null; S.produtos = new Map(); if (render_) render(); else setTimeout(render, 0); }
+  async function entrar(usuario, senha, lembrar = true) {
     const r = await rpc('app_login', { p_usuario: usuario, p_senha: senha }, false);
+    if (lembrar) salvarLogin(usuario, senha); else esquecerLogin();
     S.sess = r; sessionStorage.setItem('kh', JSON.stringify(r)); await iniciar();
   }
   async function iniciar() {
@@ -103,11 +111,12 @@
 
   function telaLogin() {
     root.innerHTML = `<div class="center"><div class="card"><h1 class="logo">ke<span>home</span></h1><p class="mut">Pedido mensal do funcionário</p>
-      <label for="u">Usuário</label><input id="u" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
-      <label for="s">Senha</label><input id="s" type="password" autocomplete="current-password" enterkeyhint="go">
+      <label for="u">Usuário</label><input id="u" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next" value="${esc(lerLogin()?.u || '')}">
+      <label for="s">Senha</label><input id="s" type="password" autocomplete="current-password" enterkeyhint="go" value="${esc(lerLogin()?.s || '')}">
+      <label style="display:flex;align-items:center;gap:.6rem;font-weight:600"><input id="lem" type="checkbox" style="width:22px;flex:none" ${lerLogin() || !localStorage.getItem(LS) ? 'checked' : ''}> Salvar login neste aparelho</label>
       <p id="le" class="err" role="alert"></p><button class="btn block" id="go">Entrar</button>${blocoInstalar()}</div></div>`;
     const go = async () => { $('#le').textContent = ''; $('#go').disabled = true;
-      try { await entrar($('#u').value, $('#s').value); } catch (e) { const le = $('#le'); if (le) le.textContent = e.message; } const g = $('#go'); if (g) g.disabled = false; };
+      try { await entrar($('#u').value, $('#s').value, $('#lem').checked); } catch (e) { const le = $('#le'); if (le) le.textContent = e.message; } const g = $('#go'); if (g) g.disabled = false; };
     $('#go').onclick = go; root.querySelectorAll('input').forEach((i) => i.addEventListener('keydown', (e) => e.key === 'Enter' && go()));
     if (!matchMedia('(pointer:coarse)').matches) $('#u').focus();   // no celular não abre o teclado sozinho
   }
@@ -170,7 +179,7 @@
     for (let n = 1; n <= PAGINAS; n++) pages.push(`<div class="pg" id="pg-${n}" data-a="zoom" data-n="${n}"><small>${n}</small><img loading="lazy" decoding="async" alt="Catálogo, página ${n}" src="catalogo/p${String(n).padStart(3, '0')}.webp"></div>`);
     $('#main').className = 'cat';
     $('#main').innerHTML = `${avisoPeriodo()}<p class="tip">Deslize para o lado para trocar de página. Toque na página para ampliar.</p>${pages.join('')}`;
-    root.insertAdjacentHTML('beforeend', `<button class="chip" id="chip" data-a="busca" aria-label="Buscar produto ou ir para uma página">1 / ${PAGINAS}</button><button class="fab" data-a="busca">${IC.search}<span>Buscar</span></button>`);
+    root.insertAdjacentHTML('beforeend', `<button class="chip" id="chip" data-a="busca" aria-label="Buscar produto ou ir para uma página">1 / ${PAGINAS}</button>`);
   }
 
   const stepper = (k, q) => `<div class="step"><button data-a="dec" data-k="${k}" aria-label="Diminuir quantidade" ${q <= 1 ? 'disabled' : ''}>${IC.minus}</button><b>${q}</b><button data-a="inc" data-k="${k}" aria-label="Aumentar quantidade">${IC.plus}</button></div>`;
@@ -478,6 +487,8 @@
     if (CFG.SUPABASE_URL && !CFG.SUPABASE_URL.includes('SEU-PROJETO')) sb = supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, { auth: { persistSession: false } });
     const saved = sessionStorage.getItem('kh');
     if (saved && sb) { try { S.sess = JSON.parse(saved); const r = await rpc('app_sessao'); S.sess = { ...S.sess, ...r }; await iniciar(); return; } catch (_) { S.sess = null; } }
+    const lg = lerLogin();
+    if (lg && lg.auto && sb) { try { await entrar(lg.u, lg.s, true); return; } catch (e) { S.sess = null; if (e && e.code === 'CREDENCIAIS_INVALIDAS') esquecerLogin(); } }
     render();
   })();
 })();
