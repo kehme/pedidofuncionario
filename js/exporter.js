@@ -55,7 +55,7 @@
       doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text('Login: ' + p.usuario + '   |   Pedido finalizado em: ' + (p.finalizadoTxt || '-'), 40, 92);
       doc.autoTable({
         startY: 104, head: [['REF', 'DESCRIÇÃO PRODUTO', 'COR', 'QUANT.', 'PREÇO', 'PREÇO/DESC (-36%)', 'TOTAL S/ DESC.', 'TOTAL C/ DESC.']],
-        body: corpo, styles: { fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [38, 70, 83] }, columnStyles: num,
+        body: corpo, styles: { fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [0, 0, 0] }, columnStyles: num,
         foot: [['', 'TOTAL DE ' + p.nome.toUpperCase() + ' (' + p.itens.length + ' itens)', '', qtdT, '', '', moeda(totS), moeda(totC)]],
         footStyles: { fillColor: [230, 230, 230], textColor: 20, fontStyle: 'bold', halign: 'right' }, showFoot: 'lastPage',
       });
@@ -68,7 +68,7 @@
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(subtitulo, 40, 48);
     doc.autoTable({
       startY: 92, head: [['FUNCIONÁRIO', 'ITENS', 'UNIDADES', 'TOTAL S/ DESC.', 'TOTAL C/ DESC.']], body: resumo,
-      styles: { fontSize: 10, cellPadding: 4 }, headStyles: { fillColor: [38, 70, 83] },
+      styles: { fontSize: 10, cellPadding: 4 }, headStyles: { fillColor: [0, 0, 0] },
       columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
       foot: [['TOTAL GERAL (' + pedidos.length + ' funcionários)', gL, gQ, moeda(gS), moeda(gC)]],
       footStyles: { fillColor: [230, 230, 230], textColor: 20, fontStyle: 'bold', halign: 'right' }, showFoot: 'lastPage',
