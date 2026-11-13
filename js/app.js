@@ -19,6 +19,7 @@
   const S = { sess: null, produtos: new Map(), pedido: null, idx: {}, view: 'catalogo', prefill: null,
               adm: { tab: 'pedidos', periodos: [], periodoId: null, pedidos: [], usuarios: [], editU: null }, tpl: null };
   let sb;
+  S.pos = null;
 
   const toast = (m, bad) => { const t = $('#toast'); t.textContent = m; t.className = 'show' + (bad ? ' bad' : ''); clearTimeout(toast.t); toast.t = setTimeout(() => (t.className = ''), 3500); };
   const root = $('#app');
@@ -94,7 +95,7 @@
   function telaFuncionario() {
     const tabs = `<div class="tabs"><button data-a="view" data-v="catalogo" class="${S.view === 'catalogo' ? 'on' : ''}">Catálogo</button><button data-a="view" data-v="pedido" class="${S.view === 'pedido' ? 'on' : ''}">Meu pedido</button></div>`;
     const t = calc(S.pedido.itens);
-    root.innerHTML = topo(`<span>Total c/ desconto: <b>${brl(t.com)}</b> / ${brl(LIMITE)}</span>`) + tabs + `<main id="main"></main>`;
+    root.innerHTML = `<div class="hd">` + topo(`<span class="pill ${t.com > LIMITE ? 'over' : ''}">Total c/ desconto: <b>${brl(t.com)}</b> / ${brl(LIMITE)}</span>`) + tabs + `</div><main id="main"></main>`;
     S.view === 'catalogo' ? viewCatalogo() : viewPedido();
   }
 
@@ -102,7 +103,7 @@
     const pages = [];
     for (let n = 1; n <= PAGINAS; n++) pages.push(`<div class="pg" id="pg-${n}" data-a="zoom" data-n="${n}"><small>${n}</small><img loading="lazy" decoding="async" alt="Catálogo, página ${n}" src="catalogo/p${String(n).padStart(3, '0')}.webp"></div>`);
     $('#main').innerHTML = `<div class="card"><label for="q">Buscar produto (referência ou nome)</label><input id="q" placeholder="ex.: 3010 ou concha" autocomplete="off"><div id="hits"></div>
-      <p class="mut" style="margin:.5rem 0 0">Role a página para ver todo o catálogo. Toque em uma página para ampliar.</p></div>${pages.join('')}`;
+      <p class="mut" style="margin:.5rem 0 0">Role para ver o catálogo. No celular, deslize o dedo para o lado para trocar de página. Toque em uma página para ampliar.</p></div>${pages.join('')}`;
     $('#q').addEventListener('input', (e) => {
       const q = e.target.value.trim().toLowerCase(); const box = $('#hits'); if (q.length < 2) { box.innerHTML = ''; return; }
       const r = []; for (const p of S.produtos.values()) { if (String(p.ref).startsWith(q) || p.descricao.toLowerCase().includes(q)) { r.push(p); if (r.length >= 8) break; } }
@@ -126,22 +127,24 @@
         <div class="fix"><button class="btn" data-a="add">Adicionar</button></div></div><p id="hint" class="mut"></p></div>`}
       <div class="card"><h2>Itens do pedido</h2>
         ${p.itens.length ? `<div class="scroll"><table><thead><tr><th>Ref.</th><th>Descrição</th><th>Cor</th><th class="n">Qtd</th><th class="n">Unit. c/ desc.</th><th class="n">Subtotal</th>${fin ? '' : '<th></th>'}</tr></thead><tbody>${linhas}</tbody></table></div>` : '<p class="mut">Nenhum item adicionado.</p>'}
-        <div style="margin-top:1rem"><div class="row"><div>Total sem desconto: <b>${brl(t.sem)}</b></div><div>Total com desconto (36%): <b>${brl(t.com)}</b></div><div>Saldo restante: <b class="${LIMITE - t.com < 0 ? 'err' : ''}">${brl(Math.max(0, LIMITE - t.com))}</b></div></div>
+        <div style="margin-top:1rem"><div class="row"><div>Total sem desconto: <b>${brl(t.sem)}</b></div><div class="total ${t.com > LIMITE ? 'over' : ''}">Total com desconto (36%)<br><b>${brl(t.com)}</b></div><div>Saldo restante: <b class="${LIMITE - t.com < 0 ? 'err' : ''}">${brl(Math.max(0, LIMITE - t.com))}</b></div></div>
         <div class="bar ${t.com > LIMITE ? 'over' : ''}"><i style="width:${pct}%"></i></div></div>
         ${fin ? '' : `<div class="actions"><button class="btn" data-a="fin" ${p.itens.length ? '' : 'disabled'}>Finalizar pedido</button></div>`}
       </div>`;
     if (!fin) { const r = $('#ref'); r.addEventListener('input', atualizaRef); atualizaRef(); if (S.prefill) { S.prefill = null; $('#cor').focus(); } }
   }
   function atualizaRef() {
-    const ref = parseInt($('#ref').value, 10), p = S.produtos.get(ref);
-    $('#desc').value = p ? p.descricao : ($('#ref').value ? 'Referência não encontrada' : '');
-    $('#hint').textContent = p ? `Preço com desconto: ${brl(p.preco * (1 - DESC))} por unidade${p.estoque ? ' | Estoque: ' + (isNaN(p.estoque) ? p.estoque.toLowerCase() : p.estoque) : ''}` : '';
+    const raw = $('#ref').value.trim(), ref = parseInt(raw, 10), p = S.produtos.get(ref), h = $('#hint');
+    $('#desc').value = p ? p.descricao : (raw ? 'Sem descrição' : '');
+    if (p) { h.className = 'mut'; h.textContent = `Preço com desconto: ${brl(p.preco * (1 - DESC))} por unidade${p.estoque ? ' | Estoque: ' + (isNaN(p.estoque) ? p.estoque.toLowerCase() : p.estoque) : ''}`; }
+    else if (raw) { h.className = 'warn'; h.textContent = '⚠ Referência sem descrição: este produto está sem saldo (não disponível para pedido).'; }
+    else { h.className = 'mut'; h.textContent = ''; }
   }
 
   const salvarItens = guard(async (itens) => { S.pedido = await rpc('app_salvar_itens', { p_itens: itens }); render(); });
   const addItem = guard(async () => {
     const ref = parseInt($('#ref').value, 10), qtd = parseInt($('#qtd').value, 10), cor = $('#cor').value.trim(), p = S.produtos.get(ref);
-    if (!p) return toast('Informe uma referência válida.', true);
+    if (!p) return toast($('#ref').value.trim() ? 'Referência sem descrição: produto sem saldo.' : 'Informe a referência.', true);
     if (!(qtd >= 1)) return toast('Informe uma quantidade válida.', true);
     const itens = S.pedido.itens.map((i) => ({ ...i })); const ex = itens.find((i) => i.ref === ref && i.cor.toLowerCase() === cor.toLowerCase());
     if (ex) ex.qtd += qtd; else itens.push({ ref, cor, qtd });
@@ -165,7 +168,7 @@
   function telaAdmin() {
     const A = S.adm, T = [['pedidos', 'Pedidos'], ['planilhas', 'Planilhas'], ['pdf', 'Emitir PDF'], ['usuarios', 'Cadastros'], ['periodo', 'Período']];
     const sel = `<select id="per" style="width:auto;color:#000">${A.periodos.map((p) => `<option value="${p.id}" ${p.id === A.periodoId ? 'selected' : ''}>${fmtDt(p.inicio)} → ${fmtDt(p.fim)}</option>`).join('') || '<option>Nenhum período</option>'}</select>`;
-    root.innerHTML = topo(`<span>Período:</span>${sel}`) + `<div class="tabs">${T.map(([k, n]) => `<button data-a="atab" data-t="${k}" class="${A.tab === k ? 'on' : ''}">${n}</button>`).join('')}</div><main id="main"></main>`;
+    root.innerHTML = `<div class="hd">` + topo(`<span>Período:</span>${sel}`) + `<div class="tabs">${T.map(([k, n]) => `<button data-a="atab" data-t="${k}" class="${A.tab === k ? 'on' : ''}">${n}</button>`).join('')}</div></div><main id="main"></main>`;
     $('#per').onchange = guard(async (e) => { A.periodoId = Number(e.target.value); await carregarPedidosAdmin(); render(); });
     ({ pedidos: admPedidos, planilhas: admPlanilhas, pdf: admPdf, usuarios: admUsuarios, periodo: admPeriodo })[A.tab]();
   }
@@ -199,12 +202,14 @@
 
   function admPdf() {
     const L = E.consolidar(fins()), tot = L.reduce((s, l) => s + l.qtd * (S.produtos.get(l.ref)?.preco || 0), 0);
-    $('#main').innerHTML = `<div class="card"><h2>Emitir pedido (PDF)</h2><p>Consolida os <b>${fins().length}</b> pedido(s) finalizado(s) do período selecionado, somando as quantidades por referência/cor: <b>${L.length}</b> linha(s), total com desconto <b>${brl(tot * (1 - DESC))}</b>.</p>
-      <div class="actions" style="justify-content:flex-start"><button class="btn" data-a="pdf" ${L.length ? '' : 'disabled'}>Gerar PDF</button><button class="btn sec" data-a="xlsxAll" ${L.length ? '' : 'disabled'}>Baixar planilha preenchida (.xlsx)</button></div>
+    $('#main').innerHTML = `<div class="card"><h2>Emitir pedido (PDF)</h2><p>Gera um PDF com o pedido de <b>cada funcionário em páginas separadas</b> (nome, referência, descrição, cor, quantidade, preços e totais) e um resumo geral no final. Pedidos finalizados no período: <b>${fins().length}</b> | total com desconto: <b>${brl(tot * (1 - DESC))}</b>.</p>
+      <div class="actions" style="justify-content:flex-start"><button class="btn" data-a="pdf" ${L.length ? '' : 'disabled'}>Gerar PDF</button><button class="btn sec" data-a="xlsxAll" ${L.length ? '' : 'disabled'}>Baixar planilha preenchida única (.xlsx)</button></div>
       ${L.length > E.CAPACIDADE ? `<p class="mut">A planilha comporta ${E.CAPACIDADE} linhas; serão geradas ${Math.ceil(L.length / E.CAPACIDADE)} planilhas (partes).</p>` : ''}</div>`;
   }
   const emitirPdf = guard(async () => {
-    const L = E.consolidar(fins()), doc = E.gerarPdf(window.jspdf.jsPDF, { titulo: 'Ke Home - Pedido de funcionarios', subtitulo: `Período: ${fmtDt(S.adm.periodos.find((p) => p.id === S.adm.periodoId)?.inicio)} a ${fmtDt(S.adm.periodos.find((p) => p.id === S.adm.periodoId)?.fim)} | ${fins().length} pedido(s) | emitido em ${fmtDt(new Date())}`, linhas: L, produtos: S.produtos });
+    const per = S.adm.periodos.find((p) => p.id === S.adm.periodoId);
+    const pedidos = fins().map((p) => ({ nome: p.nome, usuario: p.usuario, finalizadoTxt: fmtDt(p.finalizado_em), itens: [...p.itens].sort((x, y) => x.ref - y.ref || (x.cor || '').localeCompare(y.cor || '')) }));
+    const doc = E.gerarPdf(window.jspdf.jsPDF, { titulo: 'Ke Home - Pedido de funcionarios', subtitulo: `Periodo: ${fmtDt(per?.inicio)} a ${fmtDt(per?.fim)} | ${pedidos.length} pedido(s) | emitido em ${fmtDt(new Date())}`, pedidos, produtos: S.produtos });
     doc.save(`Pedido_funcionarios_${dataTag()}.pdf`);
   });
   const xlsxTodos = guard(async () => {
@@ -235,13 +240,74 @@
     const cur = S.adm.periodos.find((p) => p.id === S.adm.periodoId), agora = new Date(), aberto = cur && agora >= new Date(cur.inicio) && agora <= new Date(cur.fim);
     $('#main').innerHTML = `<div class="card"><h2>Período de pedidos</h2><p>${cur ? `Período vigente: <b>${fmtDt(cur.inicio)}</b> até <b>${fmtDt(cur.fim)}</b> — ${S.adm.periodos[0].id === cur.id ? (aberto ? '<span class="ok">ABERTO agora</span>' : '<span class="err">FECHADO agora</span>') : '(período antigo)'}` : 'Nenhum período definido: os funcionários não conseguem pedir.'}</p>
       <div class="row"><div><label>Início (data e hora)</label><input id="pi" type="datetime-local" value="${toLocalInput(cur?.inicio)}"></div><div><label>Término (data e hora)</label><input id="pf" type="datetime-local" value="${toLocalInput(cur?.fim)}"></div></div>
-      <div class="actions" style="justify-content:flex-start">${cur ? '<button class="btn" data-a="psave" data-m="upd">Atualizar período selecionado</button>' : ''}<button class="btn sec" data-a="psave" data-m="new">Criar novo período</button></div>
-      <p class="mut">O pedido liberado é sempre o do período mais recente. Criar um novo período libera um novo pedido (limite de R$ 100,00) para cada funcionário. Horários no fuso do seu navegador.</p></div>`;
+      <div class="actions" style="justify-content:flex-start">${cur ? '<button class="btn" data-a="psave" data-m="upd">Atualizar período selecionado</button>' : ''}<button class="btn sec" data-a="psave" data-m="new">Criar novo período</button>${cur ? `<button class="btn danger" data-a="pdel" data-id="${cur.id}">Excluir período selecionado</button>` : ''}</div>
+      <p class="mut">O pedido liberado é sempre o do período mais recente. Criar um novo período libera um novo pedido (limite de R$ 100,00) para cada funcionário. Horários no fuso do seu navegador.</p></div>
+      <div class="card"><h2>Períodos cadastrados</h2>${S.adm.periodos.length ? `<div class="scroll"><table><thead><tr><th>Início</th><th>Término</th><th>Situação</th><th></th></tr></thead><tbody>${S.adm.periodos.map((p, k) => { const ini = new Date(p.inicio), fim = new Date(p.fim), st = agora < ini ? 'Futuro' : agora > fim ? 'Encerrado' : 'Aberto';
+        return `<tr><td>${fmtDt(p.inicio)}</td><td>${fmtDt(p.fim)}</td><td>${st}${k === 0 ? ' (vigente)' : ''}${p.id === S.adm.periodoId ? ' | selecionado' : ''}</td><td class="n"><button class="btn danger sm" data-a="pdel" data-id="${p.id}">Excluir</button></td></tr>`; }).join('')}</tbody></table></div>` : '<p class="mut">Nenhum período cadastrado.</p>'}</div>`;
   }
   const salvarPeriodo = guard(async (modo) => {
     const i = $('#pi').value, f = $('#pf').value; if (!i || !f) return toast('Informe início e término.', true);
     const r = await rpc('app_admin_periodo_salvar', { p_id: modo === 'upd' ? S.adm.periodoId : null, p_inicio: new Date(i).toISOString(), p_fim: new Date(f).toISOString() });
     S.adm.periodoId = r.id; await carregarAdmin(); render(); toast('Período salvo.');
+  });
+
+  // ---------------------------------------------------------------- navegação do catálogo
+  const alturaCab = () => { const h = $('.hd'); return h ? h.offsetHeight : 0; };
+  // página do catálogo que está no topo da tela (0 = ainda acima das páginas)
+  function paginaAtual() {
+    const lim = alturaCab() + 30; let cur = 0;
+    for (const el of document.querySelectorAll('.pg')) { if (el.getBoundingClientRect().top <= lim) cur = Number(el.dataset.n); else break; }
+    return cur;
+  }
+  function irPagina(n, suave = true) {
+    n = Math.max(1, Math.min(PAGINAS, n)); const el = $('#pg-' + n); if (!el) return;
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - alturaCab() - 8, behavior: suave ? 'smooth' : 'auto' });
+  }
+  // guarda em que ponto do catálogo o usuário parou (página + fração já rolada dela)
+  function salvarPosicao() {
+    const n = paginaAtual();
+    if (!n) { S.pos = { y: window.scrollY }; return; }
+    const r = $('#pg-' + n).getBoundingClientRect();
+    S.pos = { n, frac: (alturaCab() + 8 - r.top) / r.height };
+  }
+  function restaurarPosicao() {
+    const p = S.pos; if (!p) return window.scrollTo(0, 0);
+    if (p.n) { const el = $('#pg-' + p.n), r = el.getBoundingClientRect(); window.scrollTo(0, r.top + window.scrollY + p.frac * r.height - alturaCab() - 8); }
+    else window.scrollTo(0, p.y || 0);
+  }
+  function setView(v) {
+    if (v === S.view) return;
+    if (S.view === 'catalogo') salvarPosicao();
+    S.view = v; render();
+    if (v === 'catalogo') restaurarPosicao(); else window.scrollTo(0, 0);
+  }
+
+  // Deslizar para o lado (celular) troca de página do catálogo
+  let toque = null;
+  document.addEventListener('touchstart', (e) => {
+    toque = null;
+    if (e.touches.length !== 1 || !S.sess || S.sess.is_admin || S.view !== 'catalogo' || document.querySelector('.modal')) return;
+    if (e.target.closest('input,button,.hits')) return;
+    if (window.visualViewport && window.visualViewport.scale > 1.02) return;       // página com zoom (pinça): não interfere
+    const t = e.touches[0];
+    if (t.clientX < 24 || t.clientX > window.innerWidth - 24) return;               // bordas: gestos do sistema (voltar)
+    toque = { x: t.clientX, y: t.clientY, t: Date.now() };
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => { if (e.touches.length > 1) toque = null; }, { passive: true });
+  document.addEventListener('touchcancel', () => { toque = null; }, { passive: true });
+  document.addEventListener('touchend', (e) => {
+    if (!toque) return; const t = e.changedTouches[0], dx = t.clientX - toque.x, dy = t.clientY - toque.y, dt = Date.now() - toque.t; toque = null;
+    if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 1.8 || dt > 700) return;  // só gesto horizontal, firme e rápido
+    irPagina(paginaAtual() + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+
+  // ---------------------------------------------------------------- períodos (excluir)
+  const excluirPeriodo = guard(async (id) => {
+    const p = S.adm.periodos.find((x) => x.id === Number(id)); if (!p) return;
+    if (!(await confirmar('Excluir período?', `O período <b>${fmtDt(p.inicio)} → ${fmtDt(p.fim)}</b> e <b>todos os pedidos</b> feitos nele (finalizados ou não) serão apagados definitivamente. Não é possível desfazer.`, 'Excluir'))) return;
+    await rpc('app_admin_periodo_excluir', { p_id: Number(id) });
+    if (S.adm.periodoId === Number(id)) S.adm.periodoId = null;
+    await carregarAdmin(); render(); toast('Período excluído.');
   });
 
   // ---------------------------------------------------------------- eventos
@@ -250,10 +316,10 @@
     switch (d.a) {
       case 'sair': return sair();
       case 'recheck': { const r = await rpc('app_sessao'); S.sess = { ...S.sess, ...r }; sessionStorage.setItem('kh', JSON.stringify(S.sess)); await iniciar(); return; }
-      case 'view': S.view = d.v; return render();
-      case 'goto': { const el = $('#pg-' + d.n); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+      case 'view': return setView(d.v);
+      case 'goto': return irPagina(Number(d.n));
       case 'zoom': { const m = document.createElement('div'); m.className = 'modal zoom'; m.innerHTML = `<img src="catalogo/p${String(d.n).padStart(3, '0')}.webp" alt="">`; m.onclick = () => m.remove(); document.body.appendChild(m); return; }
-      case 'pedir': S.prefill = d.ref; S.view = 'pedido'; return render();
+      case 'pedir': S.prefill = d.ref; return setView('pedido');
       case 'add': return addItem();
       case 'rm': return salvarItens(S.pedido.itens.filter((_, k) => k !== Number(d.k)));
       case 'fin': return finalizar();
@@ -267,6 +333,7 @@
       case 'usave': return salvarUsuario();
       case 'udel': if (await confirmar('Excluir conta?', 'A conta e os pedidos dela serão apagados. Para apenas bloquear o acesso, use "Editar" e desmarque "Ativo".', 'Excluir')) { await rpc('app_admin_usuario_excluir', { p_id: d.id }); S.adm.usuarios = await rpc('app_admin_usuarios'); await carregarPedidosAdmin(); render(); } return;
       case 'psave': return salvarPeriodo(d.m);
+      case 'pdel': return excluirPeriodo(d.id);
     }
   }));
 

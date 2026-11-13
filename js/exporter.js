@@ -34,26 +34,47 @@
     return [...m.values()].sort((a, b) => a.ref - b.ref || a.cor.localeCompare(b.cor));
   }
 
-  // PDF no mesmo layout de colunas da planilha: REF, DESCRIÇÃO, COR, QUANT., PREÇO, PREÇO/DESC (-36%), TOTAL s/ desc., TOTAL c/ desc.
-  function gerarPdf(jsPDF, { titulo, subtitulo, linhas, produtos }) {
+  // PDF: uma seção (página/s) por funcionário, com nome, mesmas colunas da planilha + COR, e um resumo geral no fim.
+  // pedidos = [{nome, usuario, finalizadoTxt, itens:[{ref, cor, qtd}]}]
+  function gerarPdf(jsPDF, { titulo, subtitulo, pedidos, produtos }) {
     const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
-    let totS = 0, totC = 0, qtdT = 0;
-    const corpo = linhas.map((l) => {
-      const p = produtos.get(Number(l.ref)) || { descricao: '(referência não encontrada)', preco: 0 };
-      const s = l.qtd * p.preco, c = s * (1 - DESCONTO);
-      totS += s; totC += c; qtdT += l.qtd;
-      return [l.ref, p.descricao, l.cor || '', l.qtd, moeda(p.preco), moeda(p.preco * (1 - DESCONTO)), moeda(s), moeda(c)];
+    const num = { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } };
+    const resumo = []; let gS = 0, gC = 0, gQ = 0, gL = 0;
+    pedidos.forEach((p, k) => {
+      if (k > 0) doc.addPage();
+      let totS = 0, totC = 0, qtdT = 0;
+      const corpo = p.itens.map((l) => {
+        const pr = produtos.get(Number(l.ref)) || { descricao: '(referência não encontrada)', preco: 0 };
+        const s = l.qtd * pr.preco, c = s * (1 - DESCONTO);
+        totS += s; totC += c; qtdT += l.qtd;
+        return [l.ref, pr.descricao, l.cor || '', l.qtd, moeda(pr.preco), moeda(pr.preco * (1 - DESCONTO)), moeda(s), moeda(c)];
+      });
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text(titulo, 40, 34);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(subtitulo, 40, 48);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text('Funcionário: ' + p.nome, 40, 76);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text('Login: ' + p.usuario + '   |   Pedido finalizado em: ' + (p.finalizadoTxt || '-'), 40, 92);
+      doc.autoTable({
+        startY: 104, head: [['REF', 'DESCRIÇÃO PRODUTO', 'COR', 'QUANT.', 'PREÇO', 'PREÇO/DESC (-36%)', 'TOTAL S/ DESC.', 'TOTAL C/ DESC.']],
+        body: corpo, styles: { fontSize: 9, cellPadding: 3 }, headStyles: { fillColor: [38, 70, 83] }, columnStyles: num,
+        foot: [['', 'TOTAL DE ' + p.nome.toUpperCase() + ' (' + p.itens.length + ' itens)', '', qtdT, '', '', moeda(totS), moeda(totC)]],
+        footStyles: { fillColor: [230, 230, 230], textColor: 20, fontStyle: 'bold', halign: 'right' }, showFoot: 'lastPage',
+      });
+      resumo.push([p.nome, p.itens.length, qtdT, moeda(totS), moeda(totC)]);
+      gS += totS; gC += totC; gQ += qtdT; gL += p.itens.length;
     });
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text(titulo, 40, 40);
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.text(subtitulo, 40, 58);
+    // resumo geral
+    doc.addPage();
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.text('Resumo geral', 40, 76);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(subtitulo, 40, 48);
     doc.autoTable({
-      startY: 72, head: [['REF', 'DESCRIÇÃO PRODUTO', 'COR', 'QUANT.', 'PREÇO', 'PREÇO/DESC (-36%)', 'TOTAL S/ DESC.', 'TOTAL C/ DESC.']],
-      body: corpo, styles: { fontSize: 8, cellPadding: 3 }, headStyles: { fillColor: [38, 70, 83] },
-      columnStyles: { 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
-      foot: [['', 'TOTAIS (' + linhas.length + ' itens)', '', qtdT, '', '', moeda(totS), moeda(totC)]],
-      footStyles: { fillColor: [230, 230, 230], textColor: 20, fontStyle: 'bold', halign: 'right' },
-      showFoot: 'lastPage',
+      startY: 92, head: [['FUNCIONÁRIO', 'ITENS', 'UNIDADES', 'TOTAL S/ DESC.', 'TOTAL C/ DESC.']], body: resumo,
+      styles: { fontSize: 10, cellPadding: 4 }, headStyles: { fillColor: [38, 70, 83] },
+      columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } },
+      foot: [['TOTAL GERAL (' + pedidos.length + ' funcionários)', gL, gQ, moeda(gS), moeda(gC)]],
+      footStyles: { fillColor: [230, 230, 230], textColor: 20, fontStyle: 'bold', halign: 'right' }, showFoot: 'lastPage',
     });
+    const n = doc.getNumberOfPages(), w = doc.internal.pageSize.getWidth(), h = doc.internal.pageSize.getHeight();
+    for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(110); doc.text('Página ' + i + ' de ' + n, w - 40, h - 20, { align: 'right' }); }
     return doc;
   }
 
