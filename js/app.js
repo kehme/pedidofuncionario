@@ -19,7 +19,7 @@
   const S = { sess: null, produtos: new Map(), pedido: null, idx: {}, view: 'catalogo', prefill: null,
               adm: { tab: 'pedidos', periodos: [], periodoId: null, pedidos: [], usuarios: [], editU: null }, tpl: null };
   let sb;
-  S.pos = null;
+  S.pos = null; S.catOnly = false;
 
   const toast = (m, bad) => { const t = $('#toast'); t.textContent = m; t.className = 'show' + (bad ? ' bad' : ''); clearTimeout(toast.t); toast.t = setTimeout(() => (t.className = ''), 3500); };
   const root = $('#app');
@@ -33,7 +33,7 @@
     }
     return data;
   }
-  const guard = (fn) => async (...a) => { try { return await fn(...a); } catch (e) { if (e.code === 'FORA_PERIODO' && S.sess && !S.sess.is_admin) { S.sess.periodo_aberto = false; render(); } else toast(e.message, true); } };
+  const guard = (fn) => async (...a) => { try { return await fn(...a); } catch (e) { if (e.code === 'FORA_PERIODO' && S.sess && !S.sess.is_admin) { S.sess.periodo_aberto = false; S.catOnly = false; render(); } else toast(e.message, true); } };
 
   function confirmar(titulo, texto, okTxt = 'Confirmar') {
     return new Promise((res) => {
@@ -47,7 +47,7 @@
   const calc = (itens) => { let s = 0; for (const i of itens) { const p = S.produtos.get(i.ref); if (p) s += p.preco * i.qtd; } return { sem: s, com: s * (1 - DESC) }; };
 
   // ---------------------------------------------------------------- sessão
-  function sair(render_ = true) { try { if (S.sess) sb.rpc('app_logout', { p_token: S.sess.token }); } catch (_) {} sessionStorage.removeItem('kh'); S.sess = null; S.pedido = null; S.produtos = new Map(); if (render_) render(); else setTimeout(render, 0); }
+  function sair(render_ = true) { try { if (S.sess) sb.rpc('app_logout', { p_token: S.sess.token }); } catch (_) {} sessionStorage.removeItem('kh'); S.sess = null; S.pedido = null; S.catOnly = false; S.produtos = new Map(); if (render_) render(); else setTimeout(render, 0); }
   async function entrar(usuario, senha) {
     const r = await rpc('app_login', { p_usuario: usuario, p_senha: senha }, false);
     S.sess = r; sessionStorage.setItem('kh', JSON.stringify(r)); await iniciar();
@@ -63,7 +63,7 @@
     if (!CFG.SUPABASE_URL || CFG.SUPABASE_URL.includes('SEU-PROJETO')) { root.innerHTML = '<div class="center"><div class="card"><h2>Configuração pendente</h2><p>Edite <b>js/config.js</b> com a URL e a chave anon do seu projeto Supabase.</p></div></div>'; return; }
     if (!S.sess) return telaLogin();
     if (S.sess.is_admin) return telaAdmin();
-    if (!S.sess.periodo_aberto) return telaBloqueio();
+    if (!S.sess.periodo_aberto) return S.catOnly ? telaSoCatalogo() : telaBloqueio();
     telaFuncionario();
   }
 
@@ -82,7 +82,17 @@
   function telaBloqueio() {
     root.innerHTML = topo() + `<main><div class="card" style="text-align:center;margin-top:3rem"><h2>${esc(MSG.FORA_PERIODO)}</h2>
       ${S.sess.inicio ? `<p class="mut">Período configurado: ${fmtDt(S.sess.inicio)} até ${fmtDt(S.sess.fim)}</p>` : ''}
-      <button class="btn sec" data-a="recheck">Verificar novamente</button></div></main>`;
+      <button class="btn" data-a="vercat">Visualizar Catálogo</button></div></main>`;
+  }
+
+  // ---------------------------------------------------------------- catálogo somente leitura (fora do período)
+  async function abrirSoCatalogo() {
+    if (!Object.keys(S.idx).length) S.idx = await fetch('catalogo/index.json').then((r) => r.json()).catch(() => ({}));
+    S.catOnly = true; S.view = 'catalogo'; S.pos = null; render(); window.scrollTo(0, 0);
+  }
+  function telaSoCatalogo() {
+    root.innerHTML = `<div class="hd">` + topo(`<button class="btn sec sm" data-a="voltarbloq">Voltar</button>`) + `</div><main id="main"></main>`;
+    viewCatalogo();
   }
 
   // ---------------------------------------------------------------- funcionário
@@ -102,10 +112,17 @@
   function viewCatalogo() {
     const pages = [];
     for (let n = 1; n <= PAGINAS; n++) pages.push(`<div class="pg" id="pg-${n}" data-a="zoom" data-n="${n}"><small>${n}</small><img loading="lazy" decoding="async" alt="Catálogo, página ${n}" src="catalogo/p${String(n).padStart(3, '0')}.webp"></div>`);
-    $('#main').innerHTML = `<div class="card"><label for="q">Buscar produto (referência ou nome)</label><input id="q" placeholder="ex.: 3010 ou concha" autocomplete="off"><div id="hits"></div>
+    const ro = S.catOnly && !S.sess.periodo_aberto;   // fora do período: só visualizar
+    $('#main').innerHTML = `${ro ? '<div class="warn">O pedido não está disponível no momento. Você pode apenas visualizar o catálogo.</div>' : ''}<div class="card"><label for="q">${ro ? 'Ir para referência ou página' : 'Buscar produto (referência ou nome)'}</label><input id="q" placeholder="${ro ? 'ex.: 88642 ou página 120' : 'ex.: 3010 ou concha'}" autocomplete="off"><div id="hits"></div>
       <p class="mut" style="margin:.5rem 0 0">Role para ver o catálogo. No celular, deslize o dedo para o lado para trocar de página. Toque em uma página para ampliar.</p></div>${pages.join('')}`;
     $('#q').addEventListener('input', (e) => {
-      const q = e.target.value.trim().toLowerCase(); const box = $('#hits'); if (q.length < 2) { box.innerHTML = ''; return; }
+      const q = e.target.value.trim().toLowerCase(); const box = $('#hits'); if (q.length < 2 && !(ro && q)) { box.innerHTML = ''; return; }
+      if (ro) {   // sem lista de produtos: acha a página pela referência (índice) ou pelo número da página
+        const num = parseInt(q.replace(/\D/g, ''), 10), hits = [];
+        if (S.idx[num]) hits.push(`<div class="hit"><span>Referência <b>${num}</b> está na página <b>${S.idx[num]}</b></span><button class="btn sec sm" data-a="goto" data-n="${S.idx[num]}">Ver página</button></div>`);
+        if (num >= 1 && num <= PAGINAS) hits.push(`<div class="hit"><span>Página <b>${num}</b></span><button class="btn sec sm" data-a="goto" data-n="${num}">Ir</button></div>`);
+        box.innerHTML = hits.length ? `<div class="hits">${hits.join('')}</div>` : '<p class="mut">Nada encontrado.</p>'; return;
+      }
       const r = []; for (const p of S.produtos.values()) { if (String(p.ref).startsWith(q) || p.descricao.toLowerCase().includes(q)) { r.push(p); if (r.length >= 8) break; } }
       box.innerHTML = r.length ? `<div class="hits">${r.map((p) => `<div class="hit"><span><b>${p.ref}</b> ${esc(p.descricao)}<br><small class="mut">${brl(p.preco * (1 - DESC))} c/ desconto</small></span>
         ${S.idx[p.ref] ? `<button class="btn sec sm" data-a="goto" data-n="${S.idx[p.ref]}">Ver página</button>` : ''}<button class="btn sm" data-a="pedir" data-ref="${p.ref}">Pedir</button></div>`).join('')}</div>` : '<p class="mut">Nada encontrado.</p>';
@@ -315,6 +332,8 @@
     const b = e.target.closest('[data-a]'); if (!b) return; const d = b.dataset;
     switch (d.a) {
       case 'sair': return sair();
+      case 'vercat': return abrirSoCatalogo();
+      case 'voltarbloq': S.catOnly = false; return render();
       case 'recheck': { const r = await rpc('app_sessao'); S.sess = { ...S.sess, ...r }; sessionStorage.setItem('kh', JSON.stringify(S.sess)); await iniciar(); return; }
       case 'view': return setView(d.v);
       case 'goto': return irPagina(Number(d.n));
