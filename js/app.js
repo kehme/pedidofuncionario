@@ -36,12 +36,30 @@
   }
   const guard = (fn) => async (...a) => { try { return await fn(...a); } catch (e) { if (e.code === 'FORA_PERIODO' && S.sess && !S.sess.is_admin) { S.sess.periodo_aberto = false; S.catOnly = false; render(); } else if (e.code === 'FINALIZAR_SOMENTE_NO_PERIODO' && S.sess) { S.sess.periodo_aberto = false; S.catOnly = true; render(); toast(e.message, true); } else toast(e.message, true); } };
 
+  const svg = (p) => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
+  const IC = {
+    out: svg('<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>'),
+    book: svg('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'),
+    bag: svg('<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>'),
+    search: svg('<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>'),
+    x: svg('<path d="M18 6 6 18"/><path d="m6 6 12 12"/>'),
+    trash: svg('<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'),
+    plus: svg('<path d="M5 12h14"/><path d="M12 5v14"/>'),
+    minus: svg('<path d="M5 12h14"/>'),
+    prev: svg('<path d="m15 18-6-6 6-6"/>'),
+    next: svg('<path d="m9 18 6-6-6-6"/>'),
+  };
+  const norm = (s) => String(s ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const abrirModal = (m) => { document.body.appendChild(m); document.body.classList.add('lock'); };
+  const fecharModal = (m) => { m.remove(); if (!document.querySelector('.modal')) document.body.classList.remove('lock'); };
+  const fecharModais = () => document.querySelectorAll('.modal').forEach(fecharModal);
+
   function confirmar(titulo, texto, okTxt = 'Confirmar') {
     return new Promise((res) => {
       const m = document.createElement('div'); m.className = 'modal';
-      m.innerHTML = `<div class="card"><h2>${esc(titulo)}</h2><p>${texto}</p><div class="actions"><button class="btn sec" data-r="0">Cancelar</button><button class="btn" data-r="1">${esc(okTxt)}</button></div></div>`;
-      m.addEventListener('click', (e) => { const b = e.target.closest('[data-r]'); if (b) { m.remove(); res(b.dataset.r === '1'); } });
-      document.body.appendChild(m);
+      m.innerHTML = `<div class="card" role="dialog" aria-modal="true"><h2>${esc(titulo)}</h2><p>${texto}</p><div class="actions"><button class="btn sec" data-r="0">Cancelar</button><button class="btn" data-r="1">${esc(okTxt)}</button></div></div>`;
+      m.addEventListener('click', (e) => { const b = e.target.closest('[data-r]'); if (b) { fecharModal(m); res(b.dataset.r === '1'); } else if (e.target === m) { fecharModal(m); res(false); } });
+      abrirModal(m);
     });
   }
   function baixar(blob, nome) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = nome.replace(/[^\w.\- ]+/g, '_'); document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
@@ -61,6 +79,7 @@
 
   // ---------------------------------------------------------------- telas
   function render() {
+    root.className = '';
     if (!CFG.SUPABASE_URL || CFG.SUPABASE_URL.includes('SEU-PROJETO')) { root.innerHTML = '<div class="center"><div class="card"><h2>Configuração pendente</h2><p>Edite <b>js/config.js</b> com a URL e a chave anon do seu projeto Supabase.</p></div></div>'; return; }
     if (!S.sess) return telaLogin();
     if (S.sess.is_admin) return telaAdmin();
@@ -69,16 +88,17 @@
   }
 
   function telaLogin() {
-    root.innerHTML = `<div class="center"><div class="card"><h1>Ke Home</h1><p class="mut">Pedido mensal do funcionário</p>
-      <label for="u">Usuário</label><input id="u" autocomplete="username" autocapitalize="none">
-      <label for="s">Senha</label><input id="s" type="password" autocomplete="current-password">
-      <p id="le" class="err"></p><button class="btn" id="go" style="width:100%">Entrar</button></div></div>`;
+    root.innerHTML = `<div class="center"><div class="card"><h1 class="logo">ke<span>home</span></h1><p class="mut">Pedido mensal do funcionário</p>
+      <label for="u">Usuário</label><input id="u" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
+      <label for="s">Senha</label><input id="s" type="password" autocomplete="current-password" enterkeyhint="go">
+      <p id="le" class="err" role="alert"></p><button class="btn block" id="go">Entrar</button></div></div>`;
     const go = async () => { $('#le').textContent = ''; $('#go').disabled = true;
       try { await entrar($('#u').value, $('#s').value); } catch (e) { const le = $('#le'); if (le) le.textContent = e.message; } const g = $('#go'); if (g) g.disabled = false; };
-    $('#go').onclick = go; root.querySelectorAll('input').forEach((i) => i.addEventListener('keydown', (e) => e.key === 'Enter' && go())); $('#u').focus();
+    $('#go').onclick = go; root.querySelectorAll('input').forEach((i) => i.addEventListener('keydown', (e) => e.key === 'Enter' && go()));
+    if (!matchMedia('(pointer:coarse)').matches) $('#u').focus();   // no celular não abre o teclado sozinho
   }
 
-  const topo = (extra = '') => `<div class="top"><b>Ke Home</b><span>${esc(S.sess.nome)}</span><span class="sp"></span>${extra}<button class="btn sec sm" data-a="sair">Sair</button></div>`;
+  const topo = (extra = '', below = '') => `<div class="top"><div class="idn"><b class="brand">ke<span>home</span></b><small>${esc(S.sess.nome)}</small></div>${extra}<button class="ibtn" data-a="sair" aria-label="Sair">${IC.out}</button></div>${below}`;
 
   function telaBloqueio() {
     root.innerHTML = topo() + `<main><div class="card" style="text-align:center;margin-top:3rem"><h2>${esc(MSG.FORA_PERIODO)}</h2>
@@ -121,9 +141,12 @@
   }
 
   function telaFuncionario() {
-    const tabs = `<div class="tabs"><button data-a="view" data-v="catalogo" class="${S.view === 'catalogo' ? 'on' : ''}">Catálogo</button><button data-a="view" data-v="pedido" class="${S.view === 'pedido' ? 'on' : ''}">Meu pedido</button></div>`;
-    const t = calc(S.pedido.itens);
-    root.innerHTML = `<div class="hd">` + topo(`<span class="pill ${t.com > LIMITE ? 'over' : ''}">Total c/ desconto: <b>${brl(t.com)}</b> / ${brl(LIMITE)}</span>`) + tabs + `</div><main id="main"></main>`;
+    const t = calc(S.pedido.itens), over = t.com > LIMITE, pct = Math.min(100, (t.com / LIMITE) * 100), n = S.pedido.itens.length;
+    const tot = `<div class="tot ${over ? 'over' : ''}"><b>${brl(t.com)}</b><small>de ${brl(LIMITE)} com desconto</small></div>`;
+    const meter = `<div class="meter ${over ? 'over' : ''}" role="progressbar" aria-label="Limite do pedido" aria-valuemin="0" aria-valuemax="${LIMITE}" aria-valuenow="${t.com.toFixed(2)}"><i style="width:${pct}%"></i></div>`;
+    const nav = `<nav class="bn" aria-label="Seções"><button data-a="view" data-v="catalogo" class="${S.view === 'catalogo' ? 'on' : ''}">${IC.book}<span>Catálogo</span></button><button data-a="view" data-v="pedido" class="${S.view === 'pedido' ? 'on' : ''}">${IC.bag}<span>Meu pedido</span>${n ? `<em>${n}</em>` : ''}</button></nav>`;
+    root.innerHTML = `<div class="hd">${topo(tot, meter)}</div><main id="main"></main>${nav}`;
+    root.className = 'withnav';
     S.view === 'catalogo' ? viewCatalogo() : viewPedido();
     vigiarPeriodo();
   }
@@ -131,43 +154,44 @@
   function viewCatalogo() {
     const pages = [];
     for (let n = 1; n <= PAGINAS; n++) pages.push(`<div class="pg" id="pg-${n}" data-a="zoom" data-n="${n}"><small>${n}</small><img loading="lazy" decoding="async" alt="Catálogo, página ${n}" src="catalogo/p${String(n).padStart(3, '0')}.webp"></div>`);
-    $('#main').innerHTML = `${avisoPeriodo()}<div class="card"><label for="q">Buscar produto (referência ou nome)</label><input id="q" placeholder="ex.: 3010 ou concha" autocomplete="off"><div id="hits"></div>
-      <p class="mut" style="margin:.5rem 0 0">Role para ver o catálogo. No celular, deslize o dedo para o lado para trocar de página. Toque em uma página para ampliar.</p></div>${pages.join('')}`;
-    $('#q').addEventListener('input', (e) => {
-      const q = e.target.value.trim().toLowerCase(); const box = $('#hits'); if (q.length < 2) { box.innerHTML = ''; return; }
-      const r = []; for (const p of S.produtos.values()) { if (String(p.ref).startsWith(q) || p.descricao.toLowerCase().includes(q)) { r.push(p); if (r.length >= 8) break; } }
-      box.innerHTML = r.length ? `<div class="hits">${r.map((p) => `<div class="hit"><span><b>${p.ref}</b> ${esc(p.descricao)}<br><small class="mut">${brl(p.preco * (1 - DESC))} c/ desconto</small></span>
-        ${S.idx[p.ref] ? `<button class="btn sec sm" data-a="goto" data-n="${S.idx[p.ref]}">Ver página</button>` : ''}<button class="btn sm" data-a="pedir" data-ref="${p.ref}">Pedir</button></div>`).join('')}</div>` : '<p class="mut">Nada encontrado.</p>';
-    });
+    $('#main').className = 'cat';
+    $('#main').innerHTML = `${avisoPeriodo()}<p class="tip">Deslize para o lado para trocar de página. Toque na página para ampliar.</p>${pages.join('')}`;
+    root.insertAdjacentHTML('beforeend', `<button class="chip" id="chip" data-a="busca" aria-label="Buscar produto ou ir para uma página">1 / ${PAGINAS}</button><button class="fab" data-a="busca">${IC.search}<span>Buscar</span></button>`);
   }
 
+  const stepper = (k, q) => `<div class="step"><button data-a="dec" data-k="${k}" aria-label="Diminuir quantidade" ${q <= 1 ? 'disabled' : ''}>${IC.minus}</button><b>${q}</b><button data-a="inc" data-k="${k}" aria-label="Aumentar quantidade">${IC.plus}</button></div>`;
+
   function viewPedido() {
-    const p = S.pedido, fin = p.status === 'finalizado', t = calc(p.itens), pct = Math.min(100, (t.com / LIMITE) * 100);
-    const linhas = p.itens.map((i, k) => { const pr = S.produtos.get(i.ref) || { descricao: '?', preco: 0 }; const un = pr.preco * (1 - DESC);
-      return `<tr><td>${i.ref}</td><td>${esc(pr.descricao)}</td><td>${esc(i.cor) || '—'}</td><td class="n">${i.qtd}</td><td class="n">${brl(un)}</td><td class="n">${brl(un * i.qtd)}</td>${fin ? '' : `<td class="n"><button class="btn danger sm" data-a="rm" data-k="${k}">Remover</button></td>`}</tr>`; }).join('');
+    const p = S.pedido, fin = p.status === 'finalizado', t = calc(p.itens), n = p.itens.length, aberto = S.sess.periodo_aberto;
+    const lista = p.itens.map((i, k) => { const pr = S.produtos.get(i.ref) || { descricao: '?', preco: 0 }; const un = pr.preco * (1 - DESC);
+      return `<li class="it"><div class="ih"><span class="ref">${i.ref}</span><div class="idesc"><b>${esc(pr.descricao)}</b>${i.cor ? `<span class="cor">${esc(i.cor)}</span>` : ''}</div>${fin ? '' : `<button class="ibtn" data-a="rm" data-k="${k}" aria-label="Remover ${esc(pr.descricao)}">${IC.trash}</button>`}</div>
+        <div class="if">${fin ? `<span>Qtd <b>${i.qtd}</b></span>` : stepper(k, i.qtd)}<span class="un">${brl(un)} un.</span><b class="sub">${brl(un * i.qtd)}</b></div></li>`; }).join('');
+    $('#main').className = '';
     $('#main').innerHTML = `
       ${avisoPeriodo()}${fin ? `<div class="card"><h2 class="ok">Pedido finalizado ✔</h2><p>Finalizado em ${fmtDt(p.finalizado_em)}. Não é mais possível alterá-lo.</p></div>`
             : `<div class="warn">⚠ É necessário o usuário finalizar o pedido, ou o pedido não será enviado.</div>`}
-      ${fin ? '' : `<div class="card"><h2>Adicionar item</h2><div class="row">
-        <div><label for="ref">Referência</label><input id="ref" inputmode="numeric" autocomplete="off" value="${esc(S.prefill || '')}"></div>
-        <div style="flex:2 1 240px"><label for="desc">Descrição</label><input id="desc" readonly placeholder="Preenchida ao informar a referência"></div>
-        <div><label for="cor">Cor</label><input id="cor" placeholder="ex.: Azul" maxlength="60"></div>
-        <div><label for="qtd">Quantidade</label><input id="qtd" type="number" min="1" step="1" value="1"></div>
-        <div class="fix"><button class="btn" data-a="add">Adicionar</button></div></div><p id="hint" class="mut"></p></div>`}
-      <div class="card"><h2>Itens do pedido</h2>
-        ${p.itens.length ? `<div class="scroll"><table><thead><tr><th>Ref.</th><th>Descrição</th><th>Cor</th><th class="n">Qtd</th><th class="n">Unit. c/ desc.</th><th class="n">Subtotal</th>${fin ? '' : '<th></th>'}</tr></thead><tbody>${linhas}</tbody></table></div>` : '<p class="mut">Nenhum item adicionado.</p>'}
-        <div style="margin-top:1rem"><div class="row"><div>Total sem desconto: <b>${brl(t.sem)}</b></div><div class="total ${t.com > LIMITE ? 'over' : ''}">Total com desconto (36%)<br><b>${brl(t.com)}</b></div><div>Saldo restante: <b class="${LIMITE - t.com < 0 ? 'err' : ''}">${brl(Math.max(0, LIMITE - t.com))}</b></div></div>
-        <div class="bar ${t.com > LIMITE ? 'over' : ''}"><i style="width:${pct}%"></i></div></div>
-        ${fin ? '' : `<div class="actions">${S.sess.periodo_aberto ? '' : '<span class="mut">Finalização disponível somente no período autorizado.</span>'}<button class="btn" data-a="fin" ${p.itens.length && S.sess.periodo_aberto ? '' : 'disabled'}>Finalizar pedido</button></div>`}
-      </div>`;
-    if (!fin) { const r = $('#ref'); r.addEventListener('input', atualizaRef); atualizaRef(); if (S.prefill) { S.prefill = null; $('#cor').focus(); } }
+      ${fin ? '' : `<div class="card add"><h2>Adicionar item</h2>
+        <div class="f2"><div><label for="ref">Referência</label><input id="ref" inputmode="numeric" pattern="[0-9]*" autocomplete="off" enterkeyhint="next" value="${esc(S.prefill || '')}"></div>
+          <div><label for="qtd">Quantidade</label><div class="qs"><button data-a="qm" aria-label="Diminuir">${IC.minus}</button><input id="qtd" type="number" inputmode="numeric" min="1" step="1" value="1"><button data-a="qp" aria-label="Aumentar">${IC.plus}</button></div></div></div>
+        <div id="prod" class="prod" aria-live="polite"></div>
+        <label for="cor">Cor</label><input id="cor" placeholder="ex.: Azul" maxlength="60" autocomplete="off" enterkeyhint="done">
+        <button class="btn block" data-a="add">Adicionar ao pedido</button></div>`}
+      <div class="card"><h2>Itens do pedido${n ? ` <span class="mut">(${n})</span>` : ''}</h2>
+        ${n ? `<ul class="items">${lista}</ul>` : '<p class="mut">Nenhum item adicionado. Escolha produtos no catálogo ou digite a referência acima.</p>'}
+        <div class="sum"><div><span>Total sem desconto</span><b>${brl(t.sem)}</b></div><div><span>Total com desconto (${Math.round(DESC * 100)}%)</span><b>${brl(t.com)}</b></div><div><span>Saldo restante</span><b class="${LIMITE - t.com < 0 ? 'err' : ''}">${brl(Math.max(0, LIMITE - t.com))}</b></div></div>
+      </div>
+      ${fin ? '' : `<div class="dock">${aberto ? '' : '<p class="nopen">Finalização disponível somente no período autorizado.</p>'}<div class="dr"><div class="dl"><span>Total c/ desconto</span><b>${brl(t.com)}</b></div><button class="btn" data-a="fin" ${n && aberto ? '' : 'disabled'}>Finalizar pedido</button></div></div>`}`;
+    if (!fin) {
+      $('#ref').addEventListener('input', atualizaRef); atualizaRef();
+      ['#cor', '#qtd'].forEach((s) => $(s).addEventListener('keydown', (e) => e.key === 'Enter' && addItem()));
+      if (S.prefill) { S.prefill = null; $('#cor').focus(); }
+    }
   }
   function atualizaRef() {
-    const raw = $('#ref').value.trim(), ref = parseInt(raw, 10), p = S.produtos.get(ref), h = $('#hint');
-    $('#desc').value = p ? p.descricao : (raw ? 'Sem descrição' : '');
-    if (p) { h.className = 'mut'; h.textContent = `Preço com desconto: ${brl(p.preco * (1 - DESC))} por unidade${p.estoque ? ' | Estoque: ' + (isNaN(p.estoque) ? p.estoque.toLowerCase() : p.estoque) : ''}`; }
-    else if (raw) { h.className = 'warn'; h.textContent = '⚠ Referência sem descrição: este produto está sem saldo (não disponível para pedido).'; }
-    else { h.className = 'mut'; h.textContent = ''; }
+    const raw = $('#ref').value.trim(), ref = parseInt(raw, 10), p = S.produtos.get(ref), h = $('#prod');
+    if (p) { h.className = 'prod ok'; h.innerHTML = `<b>${esc(p.descricao)}</b><span>${brl(p.preco * (1 - DESC))} por unidade c/ desconto${p.estoque ? ' | Estoque: ' + esc(isNaN(p.estoque) ? String(p.estoque).toLowerCase() : p.estoque) : ''}</span>`; }
+    else if (raw) { h.className = 'prod no'; h.textContent = '⚠ Referência sem descrição: este produto está sem saldo (não disponível para pedido).'; }
+    else { h.className = 'prod'; h.innerHTML = '<span class="mut">Informe a referência para ver a descrição e o preço.</span>'; }
   }
 
   const salvarItens = guard(async (itens) => { S.pedido = await rpc('app_salvar_itens', { p_itens: itens }); render(); });
@@ -178,7 +202,17 @@
     const itens = S.pedido.itens.map((i) => ({ ...i })); const ex = itens.find((i) => i.ref === ref && i.cor.toLowerCase() === cor.toLowerCase());
     if (ex) ex.qtd += qtd; else itens.push({ ref, cor, qtd });
     const t = calc(itens); if (Math.round(t.com * 100) / 100 > LIMITE) return toast(`Limite excedido. Saldo restante: ${brl(LIMITE - calc(S.pedido.itens).com)}`, true);
-    await salvarItens(itens);
+    await salvarItens(itens); toast('Item adicionado.');
+  });
+  // + / − na lista do pedido (uma alteração por vez, para não perder toques rápidos)
+  const mudarQtd = guard(async (k, delta) => {
+    if (S.busy) return; S.busy = true;
+    try {
+      const itens = S.pedido.itens.map((i) => ({ ...i })), it = itens[k]; if (!it || it.qtd + delta < 1) return;
+      it.qtd += delta;
+      if (delta > 0 && Math.round(calc(itens).com * 100) / 100 > LIMITE) return toast(`Limite excedido. Saldo restante: ${brl(LIMITE - calc(S.pedido.itens).com)}`, true);
+      await salvarItens(itens);
+    } finally { S.busy = false; }
   });
   const finalizar = guard(async () => {
     if (!(await confirmar('Finalizar pedido?', 'Tem certeza de que deseja <b>finalizar</b> o pedido? Depois de finalizado ele será enviado e <b>não poderá mais ser alterado</b>.', 'Sim, finalizar'))) return;
@@ -196,8 +230,8 @@
 
   function telaAdmin() {
     const A = S.adm, T = [['pedidos', 'Pedidos'], ['planilhas', 'Planilhas'], ['pdf', 'Emitir PDF'], ['usuarios', 'Cadastros'], ['periodo', 'Período']];
-    const sel = `<select id="per" style="width:auto;color:#000">${A.periodos.map((p) => `<option value="${p.id}" ${p.id === A.periodoId ? 'selected' : ''}>${fmtDt(p.inicio)} → ${fmtDt(p.fim)}</option>`).join('') || '<option>Nenhum período</option>'}</select>`;
-    root.innerHTML = `<div class="hd">` + topo(`<span>Período:</span>${sel}`) + `<div class="tabs">${T.map(([k, n]) => `<button data-a="atab" data-t="${k}" class="${A.tab === k ? 'on' : ''}">${n}</button>`).join('')}</div></div><main id="main"></main>`;
+    const sel = `<select id="per" aria-label="Período">${A.periodos.map((p) => `<option value="${p.id}" ${p.id === A.periodoId ? 'selected' : ''}>${fmtDt(p.inicio)} → ${fmtDt(p.fim)}</option>`).join('') || '<option>Nenhum período</option>'}</select>`;
+    root.innerHTML = `<div class="hd">` + topo('', `<div class="per">${sel}</div>`) + `<div class="tabs">${T.map(([k, n]) => `<button data-a="atab" data-t="${k}" class="${A.tab === k ? 'on' : ''}">${n}</button>`).join('')}</div></div><main id="main"></main>`;
     $('#per').onchange = guard(async (e) => { A.periodoId = Number(e.target.value); await carregarPedidosAdmin(); render(); });
     ({ pedidos: admPedidos, planilhas: admPlanilhas, pdf: admPdf, usuarios: admUsuarios, periodo: admPeriodo })[A.tab]();
   }
@@ -284,9 +318,10 @@
   const alturaCab = () => { const h = $('.hd'); return h ? h.offsetHeight : 0; };
   // página do catálogo que está no topo da tela (0 = ainda acima das páginas)
   function paginaAtual() {
-    const lim = alturaCab() + 30; let cur = 0;
-    for (const el of document.querySelectorAll('.pg')) { if (el.getBoundingClientRect().top <= lim) cur = Number(el.dataset.n); else break; }
-    return cur;
+    const a = $('#pg-1'), b = $('#pg-2'); if (!a || !b) return 0;
+    const passo = b.offsetTop - a.offsetTop, topo1 = a.getBoundingClientRect().top + window.scrollY;
+    const v = Math.floor((window.scrollY + alturaCab() + 30 - topo1) / passo);
+    return v < 0 ? 0 : Math.min(PAGINAS, v + 1);
   }
   function irPagina(n, suave = true) {
     n = Math.max(1, Math.min(PAGINAS, n)); const el = $('#pg-' + n); if (!el) return;
@@ -330,6 +365,55 @@
     irPagina(paginaAtual() + (dx < 0 ? 1 : -1));
   }, { passive: true });
 
+  // ---------------------------------------------------------------- busca em tela cheia, zoom e indicador de página
+  function abrirBusca() {
+    const m = document.createElement('div'); m.className = 'modal sheet';
+    m.innerHTML = `<div class="sh-top"><div class="sfield">${IC.search}<input id="q" type="search" inputmode="search" enterkeyhint="search" placeholder="Referência ou nome do produto" autocomplete="off" autocapitalize="none" aria-label="Buscar produto"></div><button class="ibtn" data-a="fechar" aria-label="Fechar busca">${IC.x}</button></div>
+      <div class="sh-body"><div id="hits"><p class="mut">Digite a referência ou parte do nome (ex.: 3010, concha).</p></div>
+      <div class="goto"><label for="gp">Ir para a página</label><div class="gorow"><input id="gp" type="number" inputmode="numeric" min="1" max="${PAGINAS}" placeholder="1 a ${PAGINAS}" enterkeyhint="go"><button class="btn sec" data-a="gopg">Ir</button></div></div></div>`;
+    abrirModal(m);
+    const q = $('#q', m), box = $('#hits', m);
+    q.addEventListener('input', () => {
+      const t = norm(q.value.trim()); if (t.length < 2) { box.innerHTML = '<p class="mut">Digite a referência ou parte do nome (ex.: 3010, concha).</p>'; return; }
+      const r = []; for (const p of S.produtos.values()) { if (String(p.ref).startsWith(t) || norm(p.descricao).includes(t)) { r.push(p); if (r.length >= 15) break; } }
+      box.innerHTML = r.length ? r.map((p) => `<div class="hit"><b>${p.ref}</b> <span class="d">${esc(p.descricao)}</span><small>${brl(p.preco * (1 - DESC))} c/ desconto</small>
+        <div class="ha">${S.idx[p.ref] ? `<button class="btn sec sm" data-a="goto" data-n="${S.idx[p.ref]}">Ver página</button>` : ''}<button class="btn sm" data-a="pedir" data-ref="${p.ref}">Pedir</button></div></div>`).join('') : '<p class="mut">Nada encontrado.</p>';
+    });
+    $('#gp', m).addEventListener('keydown', (e) => e.key === 'Enter' && irParaDigitada());
+    q.focus();
+  }
+  function irParaDigitada() {
+    const n = parseInt($('#gp').value, 10);
+    if (!(n >= 1 && n <= PAGINAS)) return toast(`Informe uma página de 1 a ${PAGINAS}.`, true);
+    fecharModais(); irPagina(n, false);
+  }
+  function abrirZoom(n) {
+    const m = document.createElement('div'); m.className = 'modal zoom'; m.dataset.n = n; m.dataset.n0 = n;
+    m.innerHTML = `<div class="zbar"><b id="zl"></b><button class="ibtn" data-a="zmove" data-d="-1" aria-label="Página anterior">${IC.prev}</button><button class="ibtn" data-a="zmove" data-d="1" aria-label="Próxima página">${IC.next}</button><button class="ibtn" data-a="fechar" aria-label="Fechar">${IC.x}</button></div><div class="zscroll"><img alt=""></div>`;
+    abrirModal(m); zmover(m, 0);
+  }
+  function zmover(m, d) {
+    const n = Math.max(1, Math.min(PAGINAS, Number(m.dataset.n) + d)); m.dataset.n = n;
+    $('#zl', m).textContent = `Página ${n} de ${PAGINAS}`;
+    const sc = $('.zscroll', m), img = $('img', m); img.alt = `Catálogo, página ${n}`;
+    img.onload = () => { sc.scrollLeft = (sc.scrollWidth - sc.clientWidth) / 2; sc.scrollTop = 0; };
+    img.src = `catalogo/p${String(n).padStart(3, '0')}.webp`;
+  }
+  function fecharUltimo() {
+    const m = [...document.querySelectorAll('.modal')].pop(); if (!m) return;
+    const moveu = m.classList.contains('zoom') && m.dataset.n !== m.dataset.n0;
+    fecharModal(m); if (moveu) irPagina(Number(m.dataset.n), false);   // volta o catálogo para a página que você estava vendo
+  }
+  let rafChip = 0;
+  window.addEventListener('scroll', () => {
+    if (rafChip || S.view !== 'catalogo') return;
+    rafChip = requestAnimationFrame(() => { rafChip = 0; const c = $('#chip'); if (c) c.textContent = `${Math.max(1, paginaAtual())} / ${PAGINAS}`; });
+  }, { passive: true });
+  if (window.visualViewport) {   // altura real da tela com o teclado aberto (a busca fica sempre visível)
+    const f = () => document.documentElement.style.setProperty('--vh', window.visualViewport.height + 'px');
+    window.visualViewport.addEventListener('resize', f); f();
+  }
+
   // ---------------------------------------------------------------- períodos (excluir)
   const excluirPeriodo = guard(async (id) => {
     const p = S.adm.periodos.find((x) => x.id === Number(id)); if (!p) return;
@@ -347,9 +431,16 @@
       case 'vercat': return abrirAdiantado();
       case 'recheck': { const r = await rpc('app_sessao'); S.sess = { ...S.sess, ...r }; sessionStorage.setItem('kh', JSON.stringify(S.sess)); await iniciar(); return; }
       case 'view': return setView(d.v);
-      case 'goto': return irPagina(Number(d.n));
-      case 'zoom': { const m = document.createElement('div'); m.className = 'modal zoom'; m.innerHTML = `<img src="catalogo/p${String(d.n).padStart(3, '0')}.webp" alt="">`; m.onclick = () => m.remove(); document.body.appendChild(m); return; }
-      case 'pedir': S.prefill = d.ref; return setView('pedido');
+      case 'goto': fecharModais(); return irPagina(Number(d.n));
+      case 'busca': return abrirBusca();
+      case 'gopg': return irParaDigitada();
+      case 'fechar': return fecharUltimo();
+      case 'zmove': return zmover(b.closest('.modal'), Number(d.d));
+      case 'dec': return mudarQtd(Number(d.k), -1);
+      case 'inc': return mudarQtd(Number(d.k), 1);
+      case 'qm': case 'qp': { const q = $('#qtd'); q.value = Math.max(1, (parseInt(q.value, 10) || 1) + (d.a === 'qp' ? 1 : -1)); return; }
+      case 'zoom': return abrirZoom(Number(d.n));
+      case 'pedir': fecharModais(); S.prefill = d.ref; return setView('pedido');
       case 'add': return addItem();
       case 'rm': return salvarItens(S.pedido.itens.filter((_, k) => k !== Number(d.k)));
       case 'fin': return finalizar();
