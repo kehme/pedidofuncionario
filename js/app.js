@@ -73,7 +73,7 @@
   const pausarAuto = () => { const l = lerLogin(); if (l) { l.auto = false; try { localStorage.setItem(LS, JSON.stringify(l)); } catch (_) {} } };
 
   // ---------------------------------------------------------------- sessão
-  function sair(render_ = true) { try { if (S.sess) sb.rpc('app_logout', { p_token: S.sess.token }); } catch (_) {} sessionStorage.removeItem('kh'); pausarAuto(); S.sess = null; S.pedido = null; S.catOnly = false; clearInterval(S.poll); S.poll = null; S.produtos = new Map(); if (render_) render(); else setTimeout(render, 0); }
+  function sair(render_ = true) { try { if (S.sess) sb.rpc('app_logout', { p_token: S.sess.token }); } catch (_) {} sessionStorage.removeItem('kh'); pausarAuto(); S.sess = null; S.pedido = null; S.catOnly = false; clearInterval(S.poll); S.poll = null; S.produtos = new Map(); limparCatalogos(); if (render_) render(); else setTimeout(render, 0); }
   async function entrar(usuario, senha, lembrar = true) {
     const r = await rpc('app_login', { p_usuario: usuario, p_senha: senha }, false);
     if (lembrar) salvarLogin(usuario, senha); else esquecerLogin();
@@ -88,6 +88,7 @@
   // ---------------------------------------------------------------- telas
   function render() {
     root.className = '';
+    esconderCatalogos();   // os catálogos ficam vivos fora do #app; viewCatalogo() os mostra de novo
     if (!CFG.SUPABASE_URL || CFG.SUPABASE_URL.includes('SEU-PROJETO')) { root.innerHTML = '<div class="center"><div class="card"><h2>Configuração pendente</h2><p>Edite <b>js/config.js</b> com a URL e a chave anon do seu projeto Supabase.</p></div></div>'; return; }
     if (!S.sess) return telaLogin();
     if (S.sess.is_admin) return telaAdmin();
@@ -185,8 +186,8 @@
     const fid = driveId(sel.url);
     main.innerHTML = `${avisoPeriodo()}<div class="ctop"><div class="tabs" role="tablist" aria-label="Catálogos">${L.map((c) => `<button role="tab" aria-selected="${c.id === sel.id}" data-a="ctab" data-id="${c.id}" class="${c.id === sel.id ? 'on' : ''}">${esc(c.nome)}</button>`).join('')}</div>
     </div>
-      ${fid ? `<iframe class="cframe" src="https://drive.google.com/file/d/${fid}/preview" title="${esc(sel.nome)}" allow="fullscreen" loading="lazy"></iframe>` : '<div class="card" style="margin:.75rem"><p class="err">O link deste catálogo não é válido. Avise o administrador.</p></div>'}`;
-    ajustarFrame();
+      ${fid ? '<div id="cslot" class="cslot"></div>' : '<div class="card" style="margin:.75rem"><p class="err">O link deste catálogo não é válido. Avise o administrador.</p></div>'}`;
+    if (fid) mostrarCatalogo(sel, fid);
     const on = $('.ctop .tabs .on'); if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' });   // mantém a aba escolhida visível na rolagem lateral
   }
 
@@ -348,9 +349,33 @@
 
   // ---------------------------------------------------------------- catálogos (Google Drive), navegação e busca
   const driveId = (u) => { const t = String(u || ''), m = t.match(/\/d\/([\w-]{10,})/) || t.match(/[?&]id=([\w-]{10,})/); return m ? m[1] : null; };
+  // Os iframes dos catálogos ficam num contêiner fixo no <body>, fora do #app. Assim trocar de aba
+  // (Catálogo <-> Meu pedido) só os esconde/mostra e eles NÃO recarregam (mover um iframe no DOM recarregaria).
+  S.frames = new Map();   // id do catálogo -> { el, url }
+  function hostCatalogos() {
+    let h = $('#catHost');
+    if (!h) { h = document.createElement('div'); h.id = 'catHost'; h.style.display = 'none'; document.body.appendChild(h); }
+    return h;
+  }
+  function esconderCatalogos() { const h = $('#catHost'); if (h) h.style.display = 'none'; }
+  function limparCatalogos() { S.frames.clear(); const h = $('#catHost'); if (h) h.remove(); }
+  function mostrarCatalogo(sel, fid) {
+    const h = hostCatalogos(), ids = new Set((S.catalogos || []).map((c) => c.id));
+    for (const [id, f] of S.frames) if (!ids.has(id)) { f.el.remove(); S.frames.delete(id); }   // catálogo excluído
+    let f = S.frames.get(sel.id);
+    if (f && f.url !== sel.url) { f.el.remove(); S.frames.delete(sel.id); f = null; }            // link editado pelo admin
+    if (!f) {
+      const el = document.createElement('iframe'); el.className = 'cframe'; el.title = sel.nome; el.setAttribute('allow', 'fullscreen');
+      el.src = `https://drive.google.com/file/d/${fid}/preview`; el.style.display = 'none'; h.appendChild(el);
+      f = { el, url: sel.url }; S.frames.set(sel.id, f);
+    }
+    for (const [id, x] of S.frames) { if (x !== f && id !== S.catSel) { x.el.remove(); S.frames.delete(id); } else x.el.style.display = x === f ? 'block' : 'none'; }   // mantém só o catálogo em uso
+    h.style.display = 'block'; ajustarFrame();
+  }
   function ajustarFrame() {   // o visualizador ocupa o resto da tela e rola por dentro
-    const f = $('.cframe'); if (!f) return; const nav = $('.bn');
-    f.style.height = Math.max(360, window.innerHeight - (nav ? nav.offsetHeight : 0) - (f.getBoundingClientRect().top + window.scrollY) - 4) + 'px';
+    const slot = $('#cslot'), h = $('#catHost'); if (!slot || !h || h.style.display === 'none') return; const nav = $('.bn');
+    const top = slot.getBoundingClientRect().top + window.scrollY, alt = Math.max(360, window.innerHeight - (nav ? nav.offsetHeight : 0) - top - 4);
+    h.style.top = top + 'px'; h.style.height = alt + 'px'; slot.style.height = alt + 'px';
   }
   window.addEventListener('resize', ajustarFrame); window.addEventListener('orientationchange', ajustarFrame);
   function setView(v) { if (v === S.view) return; S.view = v; render(); window.scrollTo(0, 0); }
