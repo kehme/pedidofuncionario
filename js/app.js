@@ -18,7 +18,7 @@
     NAO_PODE_EXCLUIR_A_SI_MESMO: 'Você não pode excluir a própria conta.',
   };
   const S = { sess: null, produtos: new Map(), pedido: null, catalogos: [], catSel: null, catErro: false, view: 'catalogo', prefill: null,
-              adm: { tab: 'pedidos', periodos: [], periodoId: null, pedidos: [], usuarios: [], editU: null, catalogos: [], editC: null }, tpl: null };
+              adm: { tab: 'pedidos', periodos: [], periodoId: null, pedidos: [], usuarios: [], editU: null, catalogos: [], editC: null, catErro: null }, tpl: null };
   let sb;
   S.catOnly = false; S.poll = null;
 
@@ -182,11 +182,12 @@
     main.className = 'cat';
     if (!sel) { main.innerHTML = `${avisoPeriodo()}<div class="card" style="margin:.75rem"><p class="mut">${S.catErro ? 'Não foi possível carregar os catálogos. Verifique a conexão e entre novamente.' : 'Nenhum catálogo disponível no momento.'}</p></div>`; return; }
     S.catSel = sel.id;
-    const fid = driveId(sel.url), ext = svg('<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>');
+    const fid = driveId(sel.url);
     main.innerHTML = `${avisoPeriodo()}<div class="ctop"><div class="tabs" role="tablist" aria-label="Catálogos">${L.map((c) => `<button role="tab" aria-selected="${c.id === sel.id}" data-a="ctab" data-id="${c.id}" class="${c.id === sel.id ? 'on' : ''}">${esc(c.nome)}</button>`).join('')}</div>
-      ${fid ? `<a class="ibtn dk" href="https://drive.google.com/file/d/${fid}/view" target="_blank" rel="noopener noreferrer" aria-label="Abrir este catálogo no Google Drive">${ext}</a>` : ''}<button class="ibtn dk" data-a="busca" aria-label="Buscar produto">${IC.search}</button></div>
+    </div>
       ${fid ? `<iframe class="cframe" src="https://drive.google.com/file/d/${fid}/preview" title="${esc(sel.nome)}" allow="fullscreen" loading="lazy"></iframe>` : '<div class="card" style="margin:.75rem"><p class="err">O link deste catálogo não é válido. Avise o administrador.</p></div>'}`;
     ajustarFrame();
+    const on = $('.ctop .tabs .on'); if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' });   // mantém a aba escolhida visível na rolagem lateral
   }
 
   const stepper = (k, q) => `<div class="step"><button data-a="dec" data-k="${k}" aria-label="Diminuir quantidade" ${q <= 1 ? 'disabled' : ''}>${IC.minus}</button><b>${q}</b><button data-a="inc" data-k="${k}" aria-label="Aumentar quantidade">${IC.plus}</button></div>`;
@@ -255,7 +256,7 @@
     S.produtos = new Map(prods.map(([ref, descricao, preco, cx, estoque]) => [ref, { ref, descricao, preco: Number(preco), cx, estoque }]));
     S.adm.periodos = per; if (!per.find((p) => p.id === S.adm.periodoId)) S.adm.periodoId = per.length ? per[0].id : null;
     await carregarPedidosAdmin(); S.adm.usuarios = await rpc('app_admin_usuarios');
-    S.adm.catalogos = await rpc('app_catalogos').catch(() => []);
+    try { S.adm.catalogos = await rpc('app_catalogos'); S.adm.catErro = null; } catch (e) { S.adm.catalogos = []; S.adm.catErro = e.message || 'erro desconhecido'; }
   }
   async function carregarPedidosAdmin() { S.adm.pedidos = S.adm.periodoId ? await rpc('app_admin_pedidos', { p_periodo: S.adm.periodoId }) : []; }
 
@@ -354,20 +355,6 @@
   window.addEventListener('resize', ajustarFrame); window.addEventListener('orientationchange', ajustarFrame);
   function setView(v) { if (v === S.view) return; S.view = v; render(); window.scrollTo(0, 0); }
 
-  function abrirBusca() {
-    const m = document.createElement('div'); m.className = 'modal sheet';
-    m.innerHTML = `<div class="sh-top"><div class="sfield">${IC.search}<input id="q" type="search" inputmode="search" enterkeyhint="search" placeholder="Referência ou nome do produto" autocomplete="off" autocapitalize="none" aria-label="Buscar produto"></div><button class="ibtn" data-a="fechar" aria-label="Fechar busca">${IC.x}</button></div>
-      <div class="sh-body"><div id="hits"><p class="mut">Digite a referência ou parte do nome (ex.: 3010, concha).</p></div></div>`;
-    abrirModal(m);
-    const q = $('#q', m), box = $('#hits', m);
-    q.addEventListener('input', () => {
-      const t = norm(q.value.trim()); if (t.length < 2) { box.innerHTML = '<p class="mut">Digite a referência ou parte do nome (ex.: 3010, concha).</p>'; return; }
-      const r = []; for (const p of S.produtos.values()) { if (String(p.ref).startsWith(t) || norm(p.descricao).includes(t)) { r.push(p); if (r.length >= 15) break; } }
-      box.innerHTML = r.length ? r.map((p) => `<div class="hit"><b>${p.ref}</b> <span class="d">${esc(p.descricao)}</span><small>${brl(p.preco * (1 - DESC))} c/ desconto</small>
-        <div class="ha"><button class="btn sm" data-a="pedir" data-ref="${p.ref}">Pedir</button></div></div>`).join('') : '<p class="mut">Nada encontrado.</p>';
-    });
-    q.focus();
-  }
   function fecharUltimo() { const m = [...document.querySelectorAll('.modal')].pop(); if (m) fecharModal(m); }
   if (window.visualViewport) {   // altura real da tela com o teclado aberto (a busca fica sempre visível)
     const f = () => document.documentElement.style.setProperty('--vh', window.visualViewport.height + 'px');
@@ -386,7 +373,7 @@
   // ---------------------------------------------------------------- admin: catálogos (abas da home, abertos pelo visualizador do Google Drive)
   function admCatalogos() {
     const A = S.adm, L = A.catalogos, c = A.editC || { nome: '', url: '' };
-    $('#main').innerHTML = `<div class="card"><h2>${c.id ? 'Editar catálogo' : 'Novo catálogo'}</h2>
+    $('#main').innerHTML = (A.catErro ? `<div class="warn">Não foi possível carregar os catálogos do servidor: <b>${esc(A.catErro)}</b><br>Confira se o arquivo catalogos.sql foi executado no Supabase sem erros.</div>` : '') + `<div class="card"><h2>${c.id ? 'Editar catálogo' : 'Novo catálogo'}</h2>
       <div class="row"><div><label for="cn">Nome da aba</label><input id="cn" value="${esc(c.nome)}" maxlength="40" placeholder="Ex.: Black Friday 2026"></div>
       <div><label for="cu">Link do Google Drive</label><input id="cu" type="url" value="${esc(c.url)}" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="https://drive.google.com/file/d/…/view"></div></div>
       <p class="tip">No Drive: abra o arquivo, toque em Compartilhar, escolha "Qualquer pessoa com o link" e copie o link. Para atualizar um catálogo sem mexer aqui, substitua o arquivo no Drive mantendo o mesmo link (Gerenciar versões).</p>
@@ -476,7 +463,6 @@
       case 'vercat': return abrirAdiantado();
       case 'recheck': { const r = await rpc('app_sessao'); S.sess = { ...S.sess, ...r }; sessionStorage.setItem('kh', JSON.stringify(S.sess)); await iniciar(); return; }
       case 'view': return setView(d.v);
-      case 'busca': return abrirBusca();
       case 'instalar': { if (!evInstalar) return; const ev = evInstalar; evInstalar = null; ev.prompt(); await ev.userChoice.catch(() => {}); if (!S.sess) telaLogin(); return; }
       case 'fechar': return fecharUltimo();
       case 'dec': return mudarQtd(Number(d.k), -1);

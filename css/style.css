@@ -185,3 +185,5 @@ details summary{cursor:pointer;font-weight:600;min-height:44px;display:flex;alig
 .ctop .tabs{flex:1;min-width:0;border-bottom:0}
 .ctop .ibtn{flex:none}.ctop a.ibtn{text-decoration:none}
 .cframe{display:block;width:100%;border:0;background:#fff}
+.ctop .tabs button{white-space:nowrap}
+.ctop .tabs{scroll-snap-type:x proximity}.ctop .tabs button{scroll-snap-align:center}

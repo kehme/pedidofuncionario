@@ -1,6 +1,6 @@
 /* Service worker - Ke Home Pedido do Funcionário
    Aumente VERSAO sempre que publicar uma atualização, para o app instalado receber a nova versão. */
-const VERSAO = 'v7';
+const VERSAO = 'v9';
 const SHELL = `kh-shell-${VERSAO}`, PAGS = `kh-paginas-${VERSAO}`, LIBS = `kh-libs-${VERSAO}`;
 const ARQUIVOS = ['./', 'index.html', 'css/style.css', 'js/config.js', 'js/exporter.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 const MAX_PAGINAS = 150;   // páginas do catálogo guardadas para ver sem internet (as mais recentes)
