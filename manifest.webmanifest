@@ -1,7 +1,7 @@
 {
   "id": "./",
   "name": "Pedidos Funcionário",
-  "short_name": "Pedidos Funcionário",
+  "short_name": "Pedidos Func.",
   "description": "Pedido mensal do funcionário Ke Home",
   "lang": "pt-BR",
   "start_url": "./",
