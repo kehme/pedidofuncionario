@@ -1,12 +1,12 @@
 /* Service worker - Ke Home Pedido do Funcionário
    Aumente VERSAO sempre que publicar uma atualização, para o app instalado receber a nova versão. */
-const VERSAO = 'v4';
+const VERSAO = 'v6';
 const SHELL = `kh-shell-${VERSAO}`, PAGS = `kh-paginas-${VERSAO}`, LIBS = `kh-libs-${VERSAO}`;
 const ARQUIVOS = ['./', 'index.html', 'css/style.css', 'js/config.js', 'js/exporter.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png'];
 const MAX_PAGINAS = 150;   // páginas do catálogo guardadas para ver sem internet (as mais recentes)
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(ARQUIVOS)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(ARQUIVOS.map((a) => new Request(a, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => ![SHELL, PAGS, LIBS].includes(k)).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
@@ -16,7 +16,7 @@ async function limitar(nome, max) { const c = await caches.open(nome), ks = awai
 
 // rede primeiro (sempre pega a versão nova) e usa o cache só se estiver sem internet
 async function redePrimeiro(req, nome) {
-  try { const r = await fetch(req); if (r.ok) (await caches.open(nome)).put(req, r.clone()); return r; }
+  try { const r = await fetch(req, { cache: 'no-cache' }); if (r.ok) (await caches.open(nome)).put(req, r.clone()); return r; }
   catch (_) { const c = await caches.match(req, { ignoreSearch: true }); if (c) return c; throw _; }
 }
 // cache primeiro (imagens do catálogo e bibliotecas: não mudam)

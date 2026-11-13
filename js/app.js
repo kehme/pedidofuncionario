@@ -107,7 +107,11 @@
   };
   window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); evInstalar = e; if (!S.sess && $('#go')) telaLogin(); });
   window.addEventListener('appinstalled', () => { evInstalar = null; toast('App instalado!'); if (!S.sess && $('#go')) telaLogin(); });
-  if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  if ('serviceWorker' in navigator) {
+    const tinhaSW = !!navigator.serviceWorker.controller; let recarregou = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (tinhaSW && !recarregou) { recarregou = true; location.reload(); } });   // nova versão assumiu: recarrega uma vez
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((r) => r.update()).catch(() => {}));
+  }
 
   function telaLogin() {
     root.innerHTML = `<div class="center"><div class="card"><h1 class="logo">ke<span>home</span></h1><p class="mut">Pedido mensal do funcionário</p>
@@ -252,11 +256,11 @@
   async function carregarPedidosAdmin() { S.adm.pedidos = S.adm.periodoId ? await rpc('app_admin_pedidos', { p_periodo: S.adm.periodoId }) : []; }
 
   function telaAdmin() {
-    const A = S.adm, T = [['pedidos', 'Pedidos'], ['planilhas', 'Planilhas'], ['pdf', 'Emitir PDF'], ['usuarios', 'Cadastros'], ['periodo', 'Período']];
+    const A = S.adm, T = [['pedidos', 'Pedidos'], ['planilhas', 'Planilhas'], ['pdf', 'Emitir PDF'], ['usuarios', 'Cadastros'], ['periodo', 'Período'], ['produtos', 'Produtos']];
     const sel = `<select id="per" aria-label="Período">${A.periodos.map((p) => `<option value="${p.id}" ${p.id === A.periodoId ? 'selected' : ''}>${fmtDt(p.inicio)} → ${fmtDt(p.fim)}</option>`).join('') || '<option>Nenhum período</option>'}</select>`;
     root.innerHTML = `<div class="hd">` + topo('', `<div class="per">${sel}</div>`) + `<div class="tabs">${T.map(([k, n]) => `<button data-a="atab" data-t="${k}" class="${A.tab === k ? 'on' : ''}">${n}</button>`).join('')}</div></div><main id="main"></main>`;
     $('#per').onchange = guard(async (e) => { A.periodoId = Number(e.target.value); await carregarPedidosAdmin(); render(); });
-    ({ pedidos: admPedidos, planilhas: admPlanilhas, pdf: admPdf, usuarios: admUsuarios, periodo: admPeriodo })[A.tab]();
+    ({ pedidos: admPedidos, planilhas: admPlanilhas, pdf: admPdf, usuarios: admUsuarios, periodo: admPeriodo, produtos: admProdutos })[A.tab]();
   }
   const fins = () => S.adm.pedidos.filter((p) => p.status === 'finalizado');
   const badge = (s) => `<span class="badge ${s === 'finalizado' ? 'f' : 'r'}">${s === 'finalizado' ? 'Finalizado' : 'Em andamento'}</span>`;
@@ -446,6 +450,60 @@
     await carregarAdmin(); render(); toast('Período excluído.');
   });
 
+  // ---------------------------------------------------------------- admin: atualizar produtos a partir de uma planilha .xlsx
+  const hdr = (v) => norm(v).replace(/[^a-z0-9]/g, '');
+  const valCel = (c) => { let v = c && c.value; if (v && typeof v === 'object') v = v.result ?? v.text ?? (v.richText ? v.richText.map((t) => t.text).join('') : ''); return v; };
+  const numero = (v) => { if (typeof v === 'number') return v; const t = String(v ?? '').trim(); return Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); };
+
+  // lê a aba que tiver o cabeçalho CODFAB / DESCRICAO / CX / PREÇO / ESTOQUE (prefere a aba "TABELA")
+  async function lerPlanilhaProdutos(file) {
+    const wb = new ExcelJS.Workbook(); await wb.xlsx.load(await file.arrayBuffer());
+    const abas = wb.worksheets.slice().sort((a, b) => (/tabela/i.test(b.name) ? 1 : 0) - (/tabela/i.test(a.name) ? 1 : 0));
+    for (const ws of abas) {
+      let cols = null, linhaH = 0;
+      for (let r = 1; r <= Math.min(ws.rowCount, 15) && !cols; r++) { const m = {}; ws.getRow(r).eachCell((c, n) => { const k = hdr(valCel(c)); if (k && !(k in m)) m[k] = n; }); if (m.codfab && m.descricao && m.preco) { cols = m; linhaH = r; } }
+      if (!cols) continue;
+      const out = new Map(); let invalidas = 0;
+      for (let r = linhaH + 1; r <= ws.rowCount; r++) {
+        const row = ws.getRow(r), ref = parseInt(valCel(row.getCell(cols.codfab)), 10);
+        if (!Number.isFinite(ref)) continue;
+        const descricao = String(valCel(row.getCell(cols.descricao)) ?? '').trim(), preco = numero(valCel(row.getCell(cols.preco)));
+        if (!descricao || !Number.isFinite(preco)) { invalidas++; continue; }
+        if (out.has(ref)) continue;
+        const cx = cols.cx ? parseInt(valCel(row.getCell(cols.cx)), 10) : NaN, est = cols.estoque ? String(valCel(row.getCell(cols.estoque)) ?? '').trim() : '';
+        out.set(ref, { ref, descricao, preco, cx: Number.isFinite(cx) ? cx : null, estoque: est || null });
+      }
+      return { aba: ws.name.trim(), produtos: [...out.values()], invalidas };
+    }
+    throw new Error('Não encontrei as colunas CODFAB, DESCRICAO e PREÇO em nenhuma aba da planilha.');
+  }
+  function admProdutos() {
+    const I = S.adm.imp;
+    const prev = !I ? '' : `<div class="card"><h2>Resultado da comparação</h2>
+      <p>Arquivo: <b>${esc(I.arquivo)}</b> (aba ${esc(I.aba)})</p>
+      <p>${I.total} referências na planilha · ${I.total - I.novos.length} já cadastradas (não alteradas) · <b>${I.novos.length} novas</b>${I.invalidas ? ` · ${I.invalidas} linhas ignoradas (sem descrição ou preço)` : ''}</p>
+      ${I.novos.length ? `<div class="scroll"><table><thead><tr><th>Ref.</th><th>Descrição</th><th class="n">Preço</th><th class="n">Cx</th><th>Estoque</th></tr></thead><tbody>${I.novos.slice(0, 200).map((p) => `<tr><td>${p.ref}</td><td>${esc(p.descricao)}</td><td class="n">${brl(p.preco)}</td><td class="n">${p.cx ?? '—'}</td><td>${esc(p.estoque) || '—'}</td></tr>`).join('')}</tbody></table></div>
+        ${I.novos.length > 200 ? `<p class="tip">Mostrando as 200 primeiras de ${I.novos.length}.</p>` : ''}
+        <div class="actions"><button class="btn sec" data-a="pcan">Cancelar</button><button class="btn" data-a="pimp">Adicionar ${I.novos.length} produto${I.novos.length > 1 ? 's' : ''}</button></div>` : '<p class="ok">Nenhuma referência nova. O cadastro já está atualizado.</p>'}</div>`;
+    $('#main').innerHTML = `<div class="card"><h2>Atualizar produtos</h2>
+      <p class="tip">Envie a planilha atualizada (.xlsx) com as colunas CODFAB, DESCRICAO, CX, PREÇO e ESTOQUE (aba TABELA). O sistema compara com os <b>${S.produtos.size}</b> produtos cadastrados e adiciona só as referências que ainda não existem. Os produtos existentes não são alterados.</p>
+      <label for="fx">Planilha (.xlsx)</label><input id="fx" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>${prev}`;
+  }
+  const importarProdutos = guard(async () => {
+    const I = S.adm.imp; if (!I || !I.novos.length) return;
+    let add = 0; for (let i = 0; i < I.novos.length; i += 500) add += Number(await rpc('app_admin_produtos_adicionar', { p_produtos: I.novos.slice(i, i + 500) })) || 0;
+    const prods = await rpc('app_produtos');
+    S.produtos = new Map(prods.map(([ref, descricao, preco, cx, estoque]) => [ref, { ref, descricao, preco: Number(preco), cx, estoque }]));
+    S.adm.imp = null; render(); toast(`${add} produto(s) adicionado(s).`);
+  });
+  document.addEventListener('change', guard(async (e) => {
+    if (!e.target || e.target.id !== 'fx' || !e.target.files[0]) return;
+    const f = e.target.files[0]; toast('Lendo planilha...');
+    const r = await lerPlanilhaProdutos(f);
+    S.adm.imp = { arquivo: f.name, aba: r.aba, total: r.produtos.length, invalidas: r.invalidas, novos: r.produtos.filter((p) => !S.produtos.has(p.ref)).sort((a, b) => a.ref - b.ref) };
+    render(); toast('Planilha comparada.');
+  }));
+
   // ---------------------------------------------------------------- eventos
   document.addEventListener('click', guard(async (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return; const d = b.dataset;
@@ -477,6 +535,8 @@
       case 'ucancel': S.adm.editU = null; return render();
       case 'usave': return salvarUsuario();
       case 'udel': if (await confirmar('Excluir conta?', 'A conta e os pedidos dela serão apagados. Para apenas bloquear o acesso, use "Editar" e desmarque "Ativo".', 'Excluir')) { await rpc('app_admin_usuario_excluir', { p_id: d.id }); S.adm.usuarios = await rpc('app_admin_usuarios'); await carregarPedidosAdmin(); render(); } return;
+      case 'pimp': return importarProdutos();
+      case 'pcan': S.adm.imp = null; return render();
       case 'psave': return salvarPeriodo(d.m);
       case 'pdel': return excluirPeriodo(d.id);
     }
